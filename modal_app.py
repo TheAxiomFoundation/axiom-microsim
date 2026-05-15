@@ -30,18 +30,25 @@ import modal
 app = modal.App("axiom-microsim")
 
 # Bump when any pinned SHA below changes so the layer rebuilds.
-ENGINE_VERSION = "v0.2.0-3-programs"
+ENGINE_VERSION = "v0.2.1-3-programs"
 
-# Pinned SHAs — current main as of deploy.
+# Pinned SHAs.
+# rules-us at current main — has §1(j), §24(h), §32, §63 etc. that we need.
+# rules-us-co pinned back to the SHA axiom-co-snap uses; current main has
+# a YAML formula with `\` syntax the engine doesn't yet parse.
 AXIOM_RULES_ENGINE_SHA = "f2412104e45c49d5b90818da38211fac70419d52"
 RULESPEC_US_SHA = "d9a03f172d5d2753ec3557b4e56f778f7f72b819"
-RULESPEC_US_CO_SHA = "65eadad2ff4b7027badb7005430083f26da15e1a"
+RULESPEC_US_CO_SHA = "ba00673d73c19f262d542cfa597b0b365a1313b7"
 
 PROGRAMS_TO_COMPILE: dict[str, tuple[str, str]] = {
-    # slug → (rules-repo dir, program path within repo)
-    "co-snap": ("rules-us-co", "policies/cdhs/snap/fy-2026-benefit-calculation.yaml"),
-    "federal-income-tax": ("rules-us", "statutes/26/1/j.yaml"),
-    "federal-ctc": ("rules-us", "statutes/26/24/h.yaml"),
+    # slug → (in-image dir, program path within repo)
+    # NOTE: dir names use the `rulespec-` prefix the engine expects per
+    # commit b95c73f ("Rename RuleSpec engine repo bindings"). Even
+    # though the GitHub repos are named `rules-us` / `rules-us-co`, the
+    # engine's import resolver looks for `rulespec-{prefix}` siblings.
+    "co-snap": ("rulespec-us-co", "policies/cdhs/snap/fy-2026-benefit-calculation.yaml"),
+    "federal-income-tax": ("rulespec-us", "statutes/26/1/j.yaml"),
+    "federal-ctc": ("rulespec-us", "statutes/26/24/h.yaml"),
 }
 
 # ECPS .h5 lives on a Modal Volume so cold starts don't pay the download.
@@ -69,13 +76,15 @@ image = (
     )
     .run_commands(
         f"echo 'engine: {ENGINE_VERSION}'",
-        # Engine + rulespec checkouts at pinned SHAs.
+        # Engine + rulespec checkouts at pinned SHAs. Clone as
+        # `rulespec-us` / `rulespec-us-co` so the engine's import
+        # resolver finds them via ancestor traversal.
         "git clone https://github.com/TheAxiomFoundation/axiom-rules-engine.git /opt/axiom-rules-engine",
         f"cd /opt/axiom-rules-engine && git checkout {AXIOM_RULES_ENGINE_SHA}",
-        "git clone https://github.com/TheAxiomFoundation/rules-us.git /opt/rules-us",
-        f"cd /opt/rules-us && git checkout {RULESPEC_US_SHA}",
-        "git clone https://github.com/TheAxiomFoundation/rules-us-co.git /opt/rules-us-co",
-        f"cd /opt/rules-us-co && git checkout {RULESPEC_US_CO_SHA}",
+        "git clone https://github.com/TheAxiomFoundation/rules-us.git /opt/rulespec-us",
+        f"cd /opt/rulespec-us && git checkout {RULESPEC_US_SHA}",
+        "git clone https://github.com/TheAxiomFoundation/rules-us-co.git /opt/rulespec-us-co",
+        f"cd /opt/rulespec-us-co && git checkout {RULESPEC_US_CO_SHA}",
         # Build the Rust CLI binary.
         ". $HOME/.cargo/env && cd /opt/axiom-rules-engine && cargo build --release",
         # Compile every program's baseline artifact.
@@ -111,8 +120,8 @@ image = (
     .run_commands("pip install /opt/axiom-microsim")
     .env({
         "AXIOM_ARTIFACTS_DIR": "/opt/artifacts",
-        "AXIOM_RULES_US_DIR": "/opt/rules-us",
-        "AXIOM_RULES_US_CO_DIR": "/opt/rules-us-co",
+        "AXIOM_RULES_US_DIR": "/opt/rulespec-us",
+        "AXIOM_RULES_US_CO_DIR": "/opt/rulespec-us-co",
         "AXIOM_RULES_ENGINE_BINARY": "/opt/axiom-rules-engine/target/release/axiom-rules-engine",
         "AXIOM_ECPS_PATH": f"{ECPS_MOUNT}/enhanced_cps_2024.h5",
         # /compare subprocesses into a Python with policyengine_us. In

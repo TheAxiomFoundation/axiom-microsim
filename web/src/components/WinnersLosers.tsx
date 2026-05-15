@@ -3,6 +3,10 @@
 import type { Reform } from "@/lib/types";
 import { fmtCount, fmtCurrency, fmtPct } from "@/lib/format";
 
+// "Unchanged" intentionally not surfaced; for sparse programs (CTC) it's
+// dominated by ineligible units (no qualifying children, etc.) and
+// drowns the meaningful winners/losers signal.
+
 interface Props {
   reform: Reform;
   winnersLabel?: string;
@@ -19,7 +23,6 @@ export function WinnersLosers({
   const total = reform.households_total_weighted || 1;
   const winners = reform.households_winners / total;
   const losers = reform.households_losers / total;
-  const unchanged = reform.households_unchanged / total;
 
   return (
     <div className="space-y-5">
@@ -51,38 +54,8 @@ export function WinnersLosers({
         />
       </div>
 
-      {/* Stacked bar — visual share guide */}
-      <div className="space-y-1">
-        <div className="flex h-3 w-full overflow-hidden rounded-sm border border-rule bg-rule-subtle">
-          <Segment width={winners} color="bg-success" />
-          <Segment width={unchanged} color="bg-rule" />
-          <Segment width={losers} color="bg-error" />
-        </div>
-        <div className="flex justify-between font-mono text-[0.6rem] uppercase tracking-eyebrow text-ink-muted">
-          <span>0%</span>
-          <span>50%</span>
-          <span>100%</span>
-        </div>
-      </div>
-
-      {/* Unchanged — de-emphasised single line */}
-      <div className="flex items-center justify-between rounded-sm border border-rule bg-rule-subtle px-3 py-2 text-sm">
-        <div className="flex items-center gap-2">
-          <span className="inline-block h-2 w-2 rounded-full bg-rule-strong" />
-          <span className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
-            Unchanged
-          </span>
-        </div>
-        <div className="font-mono text-ink-secondary">
-          {fmtPct(unchanged)} · {fmtCount(reform.households_unchanged)} {unitLabel}
-        </div>
-      </div>
     </div>
   );
-}
-
-function Segment({ width, color }: { width: number; color: string }) {
-  return <div className={color} style={{ width: `${width * 100}%` }} />;
 }
 
 function SideCard({

@@ -4,7 +4,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -74,14 +73,7 @@ export function DecileImpactChart({
               return `Income decile ${d}${item?.range ? ` · ${item.range}` : ""}`;
             }}
           />
-          <Bar dataKey="delta" radius={[2, 2, 2, 2]}>
-            {data.map((d, i) => (
-              <Cell
-                key={i}
-                fill={d.delta > 0 ? "#166534" : d.delta < 0 ? "#991b1b" : "#78716c"}
-              />
-            ))}
-          </Bar>
+          <Bar dataKey="delta" fill="#92400e" radius={[2, 2, 2, 2]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

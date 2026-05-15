@@ -131,6 +131,7 @@ image = (
         # /compare subprocesses into a Python with policyengine_us. In
         # Modal that's the SAME interpreter the FastAPI app runs in.
         "AXIOM_PE_PYTHON": "/usr/local/bin/python",
+        "AXIOM_PE_SCRIPT": "/opt/axiom-microsim/scripts/compute_pe_one.py",
     })
 )
 

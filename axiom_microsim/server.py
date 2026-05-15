@@ -233,7 +233,15 @@ from pathlib import Path as _Path
 _PE_PYTHON = _Path(
     os.environ.get("AXIOM_PE_PYTHON", str(_Path.home() / "policyengine.py" / ".venv" / "bin" / "python"))
 )
-_PE_SCRIPT = _Path(__file__).resolve().parent.parent / "scripts" / "compute_pe_one.py"
+# When installed as a wheel, __file__ lands in site-packages/ — the
+# scripts/ dir from the source tree isn't there. AXIOM_PE_SCRIPT lets
+# the Modal image point at the repo copy at /opt/axiom-microsim/scripts.
+_PE_SCRIPT = _Path(
+    os.environ.get(
+        "AXIOM_PE_SCRIPT",
+        str(_Path(__file__).resolve().parent.parent / "scripts" / "compute_pe_one.py"),
+    )
+)
 
 
 class PeOverrideIn(BaseModel):

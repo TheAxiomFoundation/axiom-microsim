@@ -75,8 +75,8 @@ const FEDERAL_CTC: Program = {
   default_state: "US",
   state_choices: ["US", "CA", "TX", "NY", "FL", "CO", "WA", "MA", "IL"],
   headline_label: "Annual CTC cost",
-  winners_label: "Receive more",
-  losers_label: "Receive less",
+  winners_label: "Winners",
+  losers_label: "Losers",
   levers: [
     {
       id: "ctc_child_amount",
@@ -164,8 +164,8 @@ const COLORADO_SNAP: Program = {
   default_state: "CO",
   state_choices: ["CO"],
   headline_label: "Annual cost",
-  winners_label: "Gain",
-  losers_label: "Loss",
+  winners_label: "Winners",
+  losers_label: "Losers",
   levers: [
     {
       id: "max_allotment_scale",
@@ -231,8 +231,8 @@ const FEDERAL_INCOME_TAX: Program = {
   default_state: "US",
   state_choices: ["US", "CA", "TX", "NY", "FL", "CO", "WA", "MA", "IL"],
   headline_label: "Annual revenue",
-  winners_label: "Pay less",
-  losers_label: "Pay more",
+  winners_label: "Winners",
+  losers_label: "Losers",
   levers: [
     {
       id: "all_rates_scale",

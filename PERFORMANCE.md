@@ -205,9 +205,31 @@ win with no functional change.
    defaults) and the dense compiler's "where-clause referencing derived
    values" support. Both unblock CTC and SNAP for dense / lean payloads.
 
-Together (A + B + D) take CTC nationwide from **3.4 s → ~2.5 s**; fed
-income tax from **1.3 s → ~75 ms (dense) ; ~600 ms (JSON+orjson if dense
-is unavailable for any reason)**.
+## Measured results — A + B + D shipped on this branch
+
+| Program · scope · kind | Before | After | Speedup |
+|---|---|---|---|
+| federal-income-tax · US · baseline | 1 263 ms | **28 ms** | **45×** |
+| federal-income-tax · US · reform | 1 265 ms | **111 ms** | **11×** |
+| federal-ctc · US · baseline | 3 417 ms | 2 299 ms | 1.5× |
+| federal-ctc · US · reform | 3 418 ms | 2 405 ms | 1.4× |
+| co-snap · CO · baseline | 3 743 ms | 3 428 ms | 1.1× |
+
+**§1(j) was the giveaway** — the dense engine path eliminates the
+subprocess + JSON entirely. CTC and SNAP can't compile through dense
+(blocked by the where-clause-on-derived limitation) so they only
+benefit from orjson + request-bytes caching; the engine subprocess
+(2.3 s for CTC, 3.4 s for SNAP) is still the floor.
+
+The remaining wins on CTC and SNAP are all upstream:
+
+* **(F)** Engine grows a "use compiled defaults for unset inputs" mode
+  → CO SNAP's 280k input records collapse to ~10k, payload shrinks
+  10×, JSON I/O drops from ~2 s to ~200 ms.
+* **(F')** Dense compiler grows where-clause-on-derived support → CTC
+  and SNAP join the dense path → 50× speedup like §1(j) just got.
+
+Both are issues we file on `axiom-rules-engine`, not local fixes.
 
 ## Reproducing
 

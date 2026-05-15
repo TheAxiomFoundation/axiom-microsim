@@ -13,7 +13,6 @@ aggregate) stays unchanged.
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -24,6 +23,7 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
+import orjson
 from ruamel.yaml import YAML
 
 from ..data.ecps_loader import EcpsBatch, TaxUnitBatch
@@ -159,8 +159,11 @@ def run_co_snap(
 ) -> MicrosimResult:
     projection = project_co_snap(batch, period_year=period_year)
     artifact_path, scratch = _artifact_for(overrides)
+    cache_key = ("co-snap", batch.state, period_year, outputs)
     try:
-        out = _execute_compiled(projection, artifact_path, period_year, outputs)
+        out = _execute_compiled(
+            projection, artifact_path, period_year, outputs, cache_key=cache_key,
+        )
     finally:
         if scratch is not None:
             shutil.rmtree(scratch, ignore_errors=True)
@@ -191,8 +194,11 @@ def run_federal_ctc(
     """
     projection = project_federal_ctc(batch, period_year=period_year)
     artifact_path, scratch = _ctc_artifact_for(overrides)
+    cache_key = ("federal-ctc", batch.state, period_year, outputs)
     try:
-        out = _execute_ctc(projection, artifact_path, period_year, outputs)
+        out = _execute_ctc(
+            projection, artifact_path, period_year, outputs, cache_key=cache_key,
+        )
     finally:
         if scratch is not None:
             shutil.rmtree(scratch, ignore_errors=True)
@@ -216,25 +222,99 @@ def run_federal_income_tax(
     overrides: list[ParameterOverride] | None = None,
     outputs: tuple[str, ...] = FED_INCOME_TAX_DEFAULT_OUTPUTS,
 ) -> "MicrosimResult":
-    """Run §1(j) federal income tax over an ECPS tax-unit batch."""
+    """Run §1(j) federal income tax over an ECPS tax-unit batch.
+
+    Uses the dense in-process engine path — `CompiledDenseProgram` reads
+    numpy columns directly, no JSON, no subprocess. ~50× faster than
+    the JSON `run-compiled` path for §1(j); see PERFORMANCE.md.
+    """
     projection = project_federal_income_tax(batch, period_year=period_year)
-    artifact_path, scratch = _fed_artifact_for(overrides)
+
+    # Reform: patch YAML in a scratch tree, dense-compile from the
+    # scratch program. Dense compile is ~5 ms.
+    if overrides:
+        program_path, scratch = _patched_program_for_fed_income_tax(overrides)
+    else:
+        program_path, scratch = FED_INCOME_TAX_BASELINE_PROGRAM, None
+
     try:
-        out = _execute_fed_income_tax(projection, artifact_path, period_year, outputs)
+        out = _execute_fed_income_tax_dense(projection, program_path, period_year, outputs)
     finally:
         if scratch is not None:
             shutil.rmtree(scratch, ignore_errors=True)
-            artifact_path.unlink(missing_ok=True)
 
     return MicrosimResult(
         program="federal-income-tax",
         state=batch.state,
         period_year=period_year,
-        n_households=projection.n_tax_units,   # treat tax_units as the row entity
+        n_households=projection.n_tax_units,
         n_persons=batch.n_persons,
         household_weight=batch.tax_unit_weight,
         outputs=out,
     )
+
+
+# --- Federal income tax (dense path) ----------------------------------------
+
+FED_INCOME_TAX_BASELINE_PROGRAM = RULES_US_DIR / FED_INCOME_TAX_PROGRAM_REL
+
+
+def _patched_program_for_fed_income_tax(
+    overrides: list[ParameterOverride],
+) -> tuple[Path, Path]:
+    """Copy rules-us to a scratch tree, patch, return (program_yaml, scratch_root).
+
+    Scratch dir is always named ``rulespec-us`` so the engine's import
+    resolver finds it via ancestor traversal regardless of how the
+    source dir is named locally (`rules-us` symlink) or in Modal
+    (`rulespec-us`).
+    """
+    if not RULES_US_DIR.exists():
+        raise FileNotFoundError(f"rules-us missing at {RULES_US_DIR}")
+    scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-fed-dense-"))
+    dst = scratch / "rulespec-us"
+    shutil.copytree(RULES_US_DIR, dst, symlinks=False)
+    for ov in overrides:
+        if ov.repo != "rules-us":
+            raise ValueError(
+                f"federal-income-tax overrides must target rules-us, got {ov.repo}"
+            )
+        _patch_yaml(dst / ov.file_relative, ov)
+    return dst / FED_INCOME_TAX_PROGRAM_REL, scratch
+
+
+def _execute_fed_income_tax_dense(
+    projection: FedIncomeTaxProjection,
+    program_yaml: Path,
+    period_year: int,
+    output_names: tuple[str, ...],
+) -> dict[str, np.ndarray]:
+    """In-process dense execution. No JSON, no subprocess."""
+    from axiom_rules_engine.dense import CompiledDenseProgram
+
+    program = CompiledDenseProgram.from_file(str(program_yaml), entity="TaxUnit")
+    # The projection keys inputs by their full RuleSpec id; the dense
+    # binding wants bare slot names.
+    dense_inputs = {
+        full_id.split("#input.", 1)[1]: column
+        for full_id, column in projection.inputs.items()
+    }
+    raw = program.execute(
+        period_kind="year",
+        start=f"{period_year}-01-01",
+        end=f"{period_year}-12-31",
+        inputs=dense_inputs,
+        outputs=list(output_names),
+    )
+    out_block = raw.get("outputs", raw)
+    arrays: dict[str, np.ndarray] = {}
+    for name in output_names:
+        v = out_block.get(name)
+        if v is None:
+            arrays[name] = np.zeros(projection.n_tax_units, dtype=np.float64)
+        else:
+            arrays[name] = np.asarray(v, dtype=np.float64)
+    return arrays
 
 
 # --- Schema (input slots + defaults) ----------------------------------------
@@ -252,7 +332,7 @@ def _load_schema() -> tuple[list[_SlotSpec], list[_SlotSpec]]:
             f"CO SNAP schema dump missing at {CO_SNAP_BASE_SCHEMA}. Copy it from "
             f"axiom-co-snap/engine/artifacts/co-snap-base.json."
         )
-    schema = json.loads(CO_SNAP_BASE_SCHEMA.read_text())
+    schema = orjson.loads(CO_SNAP_BASE_SCHEMA.read_bytes())
     hh = [_SlotSpec(s["name"], s["dtype"], s["default"]) for s in schema["household_inputs"]]
     pe = [_SlotSpec(s["name"], s["dtype"], s["default"]) for s in schema["person_inputs"]]
     return hh, pe
@@ -327,13 +407,23 @@ def _ctc_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, 
     return out, scratch
 
 
-def _execute_ctc(
+_CTC_REQUEST_CACHE: dict[tuple, bytes] = {}
+
+
+def _build_ctc_request_bytes(
     projection: FedCtcProjection,
-    artifact_path: Path,
     period_year: int,
     output_names: tuple[str, ...],
-) -> dict[str, np.ndarray]:
-    """Build a CompiledExecutionRequest for §24(h) and run it."""
+    cache_key: tuple | None = None,
+) -> bytes:
+    """Build + encode the §24(h) request once per (state, period, outputs).
+    Reform calls reuse this — only the artifact path changes between
+    baseline and reform, not the inputs."""
+    if cache_key is not None:
+        cached = _CTC_REQUEST_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
     interval = {"start": f"{period_year}-01-01", "end": f"{period_year}-12-31"}
     period = {"period_kind": "tax_year", "start": interval["start"], "end": interval["end"]}
     output_ids = [FED_CTC_OUTPUT_IDS[n] for n in output_names]
@@ -342,7 +432,6 @@ def _execute_ctc(
     relations: list[dict] = []
     queries: list[dict] = []
 
-    # Tax-unit inputs and queries.
     for tu_idx in range(projection.n_tax_units):
         tu_id = f"tu{tu_idx}"
         for full_id, column in projection.tax_unit_inputs.items():
@@ -352,14 +441,7 @@ def _execute_ctc(
             })
         queries.append({"entity_id": tu_id, "period": period, "outputs": output_ids})
 
-    # Person inputs (sorted by tax unit per projection.person_sort) +
-    # dependent_of_tax_unit relation tuples.
-    sort = projection.person_sort
-    # The sort order makes person index `i` belong to a contiguous tax-unit
-    # block; we recompute the (tu, position-in-tu) for each person.
     pos_in_sorted = np.arange(projection.n_persons)
-    # For each tax unit, persons are at offsets[tu]..offsets[tu+1].
-    # Map sorted person idx → tu idx via searchsorted on offsets.
     tu_for_person = np.searchsorted(projection.relation_offsets, pos_in_sorted, side="right") - 1
 
     for sorted_p_idx in range(projection.n_persons):
@@ -371,9 +453,6 @@ def _execute_ctc(
                 "name": full_id, "entity": "Person", "entity_id": person_id,
                 "interval": interval, "value": _scalar_value(column[sorted_p_idx]),
             })
-        # Engine resolves §24(h)'s ssn / filing-status slots per-person too
-        # (no entity binding in the spec). Duplicate the tax-unit values
-        # onto each person.
         for full_id, column in projection.tax_unit_inputs.items():
             inputs.append({
                 "name": full_id, "entity": "Person", "entity_id": person_id,
@@ -381,11 +460,6 @@ def _execute_ctc(
             })
         relations.append({
             "name": FED_CTC_RELATION_NAME,
-            # Compiled relation has related_slot=0 (Person), current_slot=1
-            # (TaxUnit) for the count_related expression — tuple position
-            # 0 must be the Person, position 1 the TaxUnit. The YAML
-            # `arguments: [TaxUnit, Person]` describes the predicate, not
-            # the slot order at execution.
             "tuple": [person_id, tu_id],
             "interval": interval,
         })
@@ -395,14 +469,31 @@ def _execute_ctc(
         "dataset": {"inputs": inputs, "relations": relations},
         "queries": queries,
     }
+    encoded = orjson.dumps(request)
+    if cache_key is not None:
+        _CTC_REQUEST_CACHE[cache_key] = encoded
+    return encoded
+
+
+def _execute_ctc(
+    projection: FedCtcProjection,
+    artifact_path: Path,
+    period_year: int,
+    output_names: tuple[str, ...],
+    cache_key: tuple | None = None,
+) -> dict[str, np.ndarray]:
+    """Build a CompiledExecutionRequest for §24(h) and run it."""
+    request_bytes = _build_ctc_request_bytes(
+        projection, period_year, output_names, cache_key=cache_key
+    )
 
     proc = subprocess.run(
         [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
-        input=json.dumps(request), text=True, capture_output=True,
+        input=request_bytes, capture_output=True,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"engine failed:\n{proc.stderr.strip()[:1500]}")
-    response = json.loads(proc.stdout)
+    response = orjson.loads(proc.stdout)
 
     id_to_name = {v: k for k, v in FED_CTC_OUTPUT_IDS.items()}
     arrays = {n: np.zeros(projection.n_tax_units, dtype=np.float64) for n in output_names}
@@ -487,11 +578,11 @@ def _execute_fed_income_tax(
 
     proc = subprocess.run(
         [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
-        input=json.dumps(request), text=True, capture_output=True,
+        input=orjson.dumps(request), capture_output=True,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"engine failed:\n{proc.stderr.strip()[:1500]}")
-    response = json.loads(proc.stdout)
+    response = orjson.loads(proc.stdout)
 
     id_to_name = {v: k for k, v in FED_INCOME_TAX_OUTPUT_IDS.items()}
     arrays = {n: np.zeros(projection.n_tax_units, dtype=np.float64) for n in output_names}
@@ -526,21 +617,33 @@ def _compile(program_yaml: Path, output_json: Path) -> None:
 
 # --- Execute -----------------------------------------------------------------
 
+_CO_SNAP_REQUEST_CACHE: dict[tuple, bytes] = {}
+
+
 def _execute_compiled(
     projection: CoSnapProjection,
     artifact_path: Path,
     period_year: int,
     output_names: tuple[str, ...],
+    cache_key: tuple | None = None,
 ) -> dict[str, np.ndarray]:
     output_ids = [DEFAULT_OUTPUT_IDS[n] for n in output_names]
-    request = _build_compiled_request(projection, period_year, output_ids)
+    request_bytes: bytes
+    if cache_key is not None and cache_key in _CO_SNAP_REQUEST_CACHE:
+        request_bytes = _CO_SNAP_REQUEST_CACHE[cache_key]
+    else:
+        request = _build_compiled_request(projection, period_year, output_ids)
+        request_bytes = orjson.dumps(request)
+        if cache_key is not None:
+            _CO_SNAP_REQUEST_CACHE[cache_key] = request_bytes
+
     proc = subprocess.run(
         [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
-        input=json.dumps(request), text=True, capture_output=True,
+        input=request_bytes, capture_output=True,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"engine failed:\n{proc.stderr.strip()}")
-    response = json.loads(proc.stdout)
+    response = orjson.loads(proc.stdout)
     id_to_name = {DEFAULT_OUTPUT_IDS[n]: n for n in output_names}
     return _collect_outputs(response, projection.n_households, output_names, id_to_name)
 

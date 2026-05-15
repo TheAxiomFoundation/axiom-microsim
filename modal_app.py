@@ -1,17 +1,25 @@
 """Modal deployment for axiom-microsim.
 
-Hosts the FastAPI app from ``axiom_microsim.server`` plus the
-``axiom-rules-engine`` Rust binary, the Python dense binding (built with
-maturin), the ``rules-us`` and ``rules-us-co`` rulespec trees, and a
-prebuilt ``co-snap.compiled.json`` artifact.
+Hosts the FastAPI app from ``axiom_microsim.server``, which carries
+three programs (CO SNAP, federal income tax §1(j), federal CTC §24(h))
+plus a live PolicyEngine comparison endpoint. Image bundles:
 
-Same wire shape as the local ``uvicorn axiom_microsim.server:app`` — the
-Vercel app reads ``AXIOM_MICROSIM_URL`` and POSTs there regardless of
-which side it's pointed at.
+  - ``axiom-rules-engine`` Rust binary
+  - ``rules-us`` + ``rules-us-co`` rulespec trees (pinned commits)
+  - Pre-compiled artifacts for all three programs
+  - The dense PyO3 binding (built with maturin)
+  - ``policyengine_us`` + ``policyengine_core`` for the /compare endpoint
+
+Same wire shape as ``uvicorn axiom_microsim.server:app`` locally — the
+Vercel app reads ``AXIOM_MICROSIM_URL`` and POSTs there.
 
 Deploy::
 
     modal deploy modal_app.py
+
+First deploy is heavy (~10-15 min) because of the Rust build + PE
+install. Subsequent deploys reuse cached layers unless ``ENGINE_VERSION``
+or any pinned SHA changes.
 """
 
 from __future__ import annotations
@@ -22,44 +30,57 @@ import modal
 app = modal.App("axiom-microsim")
 
 # Bump when any pinned SHA below changes so the layer rebuilds.
-ENGINE_VERSION = "v0.1.0-co-snap"
+ENGINE_VERSION = "v0.2.0-3-programs"
 
-# Pinned SHAs. Match axiom-co-snap so a reform expressed in either app
-# evaluates to identical RuleSpec values.
-AXIOM_RULES_ENGINE_SHA = "9106f44e34ec3eae92a1adf2246560c5eac00094"
-RULESPEC_US_SHA = "2f3a30991e1f8279c2fa664e51f068a63d905591"
-RULESPEC_US_CO_SHA = "ba00673d73c19f262d542cfa597b0b365a1313b7"
+# Pinned SHAs — current main as of deploy.
+AXIOM_RULES_ENGINE_SHA = "f2412104e45c49d5b90818da38211fac70419d52"
+RULESPEC_US_SHA = "d9a03f172d5d2753ec3557b4e56f778f7f72b819"
+RULESPEC_US_CO_SHA = "65eadad2ff4b7027badb7005430083f26da15e1a"
 
-CO_SNAP_PROGRAM_REL = "policies/cdhs/snap/fy-2026-benefit-calculation.yaml"
+PROGRAMS_TO_COMPILE: dict[str, tuple[str, str]] = {
+    # slug → (rules-repo dir, program path within repo)
+    "co-snap": ("rules-us-co", "policies/cdhs/snap/fy-2026-benefit-calculation.yaml"),
+    "federal-income-tax": ("rules-us", "statutes/26/1/j.yaml"),
+    "federal-ctc": ("rules-us", "statutes/26/24/h.yaml"),
+}
 
-# ECPS file is large (~50 MB compressed) — bake it in via a Modal Volume
-# rather than the image so cold starts don't pay the download.
+# ECPS .h5 lives on a Modal Volume so cold starts don't pay the download.
+# Populate once with `modal volume put axiom-microsim-ecps enhanced_cps_2024.h5`.
 ECPS_VOLUME = modal.Volume.from_name("axiom-microsim-ecps", create_if_missing=True)
 ECPS_MOUNT = "/data/ecps"
 
+
+_compile_cmds = [
+    f"/opt/axiom-rules-engine/target/release/axiom-rules-engine compile "
+    f"--program /opt/{repo}/{path} "
+    f"--output /opt/artifacts/{slug}.compiled.json"
+    for slug, (repo, path) in PROGRAMS_TO_COMPILE.items()
+]
+
+
 image = (
-    modal.Image.debian_slim(python_version="3.11")
-    .apt_install("git", "curl", "build-essential", "pkg-config", "libssl-dev", "ca-certificates")
+    modal.Image.debian_slim(python_version="3.13")
+    .apt_install(
+        "git", "curl", "build-essential", "pkg-config", "libssl-dev", "ca-certificates",
+    )
     .run_commands(
         "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs "
         "| sh -s -- -y --default-toolchain stable --profile minimal",
     )
     .run_commands(
         f"echo 'engine: {ENGINE_VERSION}'",
-        # Engine
+        # Engine + rulespec checkouts at pinned SHAs.
         "git clone https://github.com/TheAxiomFoundation/axiom-rules-engine.git /opt/axiom-rules-engine",
         f"cd /opt/axiom-rules-engine && git checkout {AXIOM_RULES_ENGINE_SHA}",
-        # Rules
-        "git clone https://github.com/TheAxiomFoundation/rulespec-us.git /opt/rules-us",
+        "git clone https://github.com/TheAxiomFoundation/rules-us.git /opt/rules-us",
         f"cd /opt/rules-us && git checkout {RULESPEC_US_SHA}",
-        "git clone https://github.com/TheAxiomFoundation/rulespec-us-co.git /opt/rules-us-co",
+        "git clone https://github.com/TheAxiomFoundation/rules-us-co.git /opt/rules-us-co",
         f"cd /opt/rules-us-co && git checkout {RULESPEC_US_CO_SHA}",
-        # Build CLI binary + compile baseline artifact
+        # Build the Rust CLI binary.
         ". $HOME/.cargo/env && cd /opt/axiom-rules-engine && cargo build --release",
+        # Compile every program's baseline artifact.
         "mkdir -p /opt/artifacts",
-        f"/opt/axiom-rules-engine/target/release/axiom-rules-engine compile "
-        f"--program /opt/rules-us-co/{CO_SNAP_PROGRAM_REL} "
-        f"--output /opt/artifacts/co-snap.compiled.json",
+        *_compile_cmds,
     )
     .pip_install(
         "fastapi>=0.110",
@@ -67,17 +88,26 @@ image = (
         "pydantic>=2.6",
         "h5py>=3.10",
         "numpy>=1.26",
+        "pandas>=2.1",
         "ruamel.yaml>=0.18",
         "maturin>=1.7",
     )
     .run_commands(
-        # Build the dense PyO3 extension into the image's site-packages.
-        ". $HOME/.cargo/env && cd /opt/axiom-rules-engine && "
+        # Install the axiom-rules-engine Python package + dense PyO3 ext.
+        ". $HOME/.cargo/env && "
         "pip install /opt/axiom-rules-engine/python && "
-        "maturin build --release --manifest-path python-ext/Cargo.toml --out /tmp/wheels && "
+        "maturin build --release --manifest-path /opt/axiom-rules-engine/python-ext/Cargo.toml --out /tmp/wheels && "
         "pip install /tmp/wheels/*.whl",
     )
-    .add_local_dir(".", "/opt/axiom-microsim", ignore=["**/node_modules", "**/.next", "web/**"])
+    .pip_install(
+        # PolicyEngine — used by /compare for live oracle comparison.
+        "policyengine_us>=1.0",
+        "policyengine_core>=3.0",
+    )
+    .add_local_dir(
+        ".", "/opt/axiom-microsim",
+        ignore=["**/node_modules", "**/.next", "web/**", ".venv/**", "engine/**"],
+    )
     .run_commands("pip install /opt/axiom-microsim")
     .env({
         "AXIOM_ARTIFACTS_DIR": "/opt/artifacts",
@@ -85,6 +115,9 @@ image = (
         "AXIOM_RULES_US_CO_DIR": "/opt/rules-us-co",
         "AXIOM_RULES_ENGINE_BINARY": "/opt/axiom-rules-engine/target/release/axiom-rules-engine",
         "AXIOM_ECPS_PATH": f"{ECPS_MOUNT}/enhanced_cps_2024.h5",
+        # /compare subprocesses into a Python with policyengine_us. In
+        # Modal that's the SAME interpreter the FastAPI app runs in.
+        "AXIOM_PE_PYTHON": "/usr/local/bin/python",
     })
 )
 
@@ -92,8 +125,11 @@ image = (
 @app.function(
     image=image,
     volumes={ECPS_MOUNT: ECPS_VOLUME},
-    timeout=300,
-    memory=4096,
+    timeout=600,
+    memory=8192,
+    # PE microsim warmup is heavy; keep one container hot to avoid
+    # paying the cold start on every reform run.
+    min_containers=1,
 )
 @modal.asgi_app()
 def web():

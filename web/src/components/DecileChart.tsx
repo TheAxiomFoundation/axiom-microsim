@@ -15,11 +15,20 @@ import { fmtCurrency } from "@/lib/format";
 
 interface Props {
   bins: DecileBin[];
+  /** Tooltip metric label, e.g. "Mean CTC per tax unit" or "Mean monthly SNAP". */
+  metricLabel?: string;
+  /** Tooltip suffix, e.g. "/yr" or "/mo". */
+  metricSuffix?: string;
 }
 
-export function DecileChart({ bins }: Props) {
+export function DecileChart({
+  bins,
+  metricLabel = "Mean value",
+  metricSuffix = "",
+}: Props) {
   const data = bins.map((b) => ({
     decile: `D${b.decile}`,
+    range: `$${(b.income_floor / 1000).toFixed(0)}K – $${(b.income_ceiling / 1000).toFixed(0)}K`,
     mean: b.mean_monthly_benefit,
   }));
   return (
@@ -46,8 +55,11 @@ export function DecileChart({ bins }: Props) {
               fontSize: 12,
               fontFamily: "var(--f-sans)",
             }}
-            formatter={(v: number) => [fmtCurrency(v) + "/mo", "Mean monthly SNAP"]}
-            labelFormatter={(d) => `Income ${d}`}
+            formatter={(v: number) => [fmtCurrency(v) + metricSuffix, metricLabel]}
+            labelFormatter={(d, payload) => {
+              const item = payload?.[0]?.payload as { range?: string } | undefined;
+              return `Income decile ${d}${item?.range ? ` · ${item.range}` : ""}`;
+            }}
           />
           <Bar dataKey="mean" fill="#92400e" radius={[2, 2, 0, 0]} />
         </BarChart>

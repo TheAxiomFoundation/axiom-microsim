@@ -9,15 +9,31 @@ import type { Override } from "./types";
 
 export type ProgramId = "co-snap" | "federal-income-tax" | "federal-ctc";
 
+/** Sliders come in two flavours.
+ *
+ * `kind: "scale"` — a multiplier, displayed as a percent. Native shape
+ *   for tables (scale every bracket rate, scale every shelter-cost row).
+ *
+ * `kind: "amount"` — an absolute dollar value, displayed as currency.
+ *   Native shape for single parameters where humans think in dollars
+ *   ("change CTC from $2,200 to $3,000 per child").
+ */
 export interface Lever {
   id: string;
   label: string;
   description: string;
   baseline_label: string;
-  min_multiplier: number;
-  max_multiplier: number;
+  kind: "scale" | "amount";
+  /** Baseline value — for `scale` always 1; for `amount` the current dollar amount. */
+  baseline: number;
+  /** Min slider value in its native units (multiplier or dollars). */
+  min: number;
+  /** Max slider value in its native units. */
+  max: number;
   step: number;
-  build: (multiplier: number) => Override[];
+  /** Currency symbol prefix for amount levers (default "$"). */
+  unit?: string;
+  build: (value: number) => Override[];
 }
 
 export interface Program {
@@ -55,37 +71,40 @@ const FEDERAL_CTC: Program = {
     {
       id: "ctc_child_amount",
       label: "Per qualifying-child amount",
-      description: "Scale the per-qualifying-child credit (baseline $2,200 under §24(h)(2)).",
-      baseline_label: "$2,200 / qualifying child",
-      min_multiplier: 0,
-      max_multiplier: 3,
-      step: 0.05,
-      build: (m) => [
+      description: "Dollar credit per qualifying child under §24(h)(2).",
+      baseline_label: "$2,200 (current law)",
+      kind: "amount",
+      baseline: 2200,
+      min: 0,
+      max: 6000,
+      step: 100,
+      build: (v) => [
         {
           repo: "rules-us",
           file_relative: CTC_FILE,
           parameter: "ctc_child_amount_under_subsection_h",
-          patch_kind: "scale_formula",
-          multiplier: m,
+          patch_kind: "set_formula",
+          formula: String(Math.round(v)),
         },
       ],
     },
     {
       id: "ctc_other_dependent_amount",
       label: "Per other-dependent amount",
-      description:
-        "Scale the per-other-dependent credit (baseline $500 under §24(h)(4)(A)).",
-      baseline_label: "$500 / other dependent",
-      min_multiplier: 0,
-      max_multiplier: 5,
-      step: 0.1,
-      build: (m) => [
+      description: "Dollar credit per other dependent under §24(h)(4)(A).",
+      baseline_label: "$500 (current law)",
+      kind: "amount",
+      baseline: 500,
+      min: 0,
+      max: 2500,
+      step: 50,
+      build: (v) => [
         {
           repo: "rules-us",
           file_relative: CTC_FILE,
           parameter: "ctc_other_dependent_amount_under_subsection_h",
-          patch_kind: "scale_formula",
-          multiplier: m,
+          patch_kind: "set_formula",
+          formula: String(Math.round(v)),
         },
       ],
     },
@@ -93,18 +112,20 @@ const FEDERAL_CTC: Program = {
       id: "ctc_joint_phase_out",
       label: "Joint phase-out threshold",
       description:
-        "Scale the joint-filer phase-out threshold (baseline $400,000 under §24(h)(3)). Affects which tax units' max amount is reduced.",
-      baseline_label: "$400,000 (joint)",
-      min_multiplier: 0.25,
-      max_multiplier: 2,
-      step: 0.05,
-      build: (m) => [
+        "Where the per-credit phase-out begins for joint filers under §24(h)(3).",
+      baseline_label: "$400,000 (current law)",
+      kind: "amount",
+      baseline: 400_000,
+      min: 50_000,
+      max: 1_000_000,
+      step: 25_000,
+      build: (v) => [
         {
           repo: "rules-us",
           file_relative: CTC_FILE,
           parameter: "ctc_joint_phase_out_threshold_under_subsection_h",
-          patch_kind: "scale_formula",
-          multiplier: m,
+          patch_kind: "set_formula",
+          formula: String(Math.round(v)),
         },
       ],
     },
@@ -135,8 +156,9 @@ const COLORADO_SNAP: Program = {
       description:
         "Scale every row of the USDA maximum-allotment-by-household-size table.",
       baseline_label: "1-person: $298 / mo",
-      min_multiplier: 0.5,
-      max_multiplier: 2,
+      kind: "scale", baseline: 1,
+      min: 0.5,
+      max: 2,
       step: 0.05,
       build: (m) => [
         {
@@ -161,8 +183,9 @@ const COLORADO_SNAP: Program = {
       description:
         "Scale the SNAP standard deduction (48 states / DC) by household size.",
       baseline_label: "1–3 person: $209 / mo",
-      min_multiplier: 0,
-      max_multiplier: 2,
+      kind: "scale", baseline: 1,
+      min: 0,
+      max: 2,
       step: 0.05,
       build: (m) => [
         {
@@ -200,8 +223,9 @@ const FEDERAL_INCOME_TAX: Program = {
       description:
         "Scale every rate in the 7-bracket schedule (10/12/22/24/32/35/37%) by the same multiplier.",
       baseline_label: "10 → 12 → 22 → 24 → 32 → 35 → 37 %",
-      min_multiplier: 0.5,
-      max_multiplier: 1.5,
+      kind: "scale", baseline: 1,
+      min: 0.5,
+      max: 1.5,
       step: 0.01,
       build: (m) => [
         {
@@ -219,8 +243,9 @@ const FEDERAL_INCOME_TAX: Program = {
       description:
         "Scale every bracket threshold for joint filers. >1.0 = wider brackets (lower tax); <1.0 = narrower.",
       baseline_label: "Joint D1 → 10% up to $24,800",
-      min_multiplier: 0.5,
-      max_multiplier: 2,
+      kind: "scale", baseline: 1,
+      min: 0.5,
+      max: 2,
       step: 0.05,
       build: (m) => [
         {
@@ -237,8 +262,9 @@ const FEDERAL_INCOME_TAX: Program = {
       label: "Single bracket thresholds (scale)",
       description: "Scale every bracket threshold for single filers.",
       baseline_label: "Single D1 → 10% up to $12,400",
-      min_multiplier: 0.5,
-      max_multiplier: 2,
+      kind: "scale", baseline: 1,
+      min: 0.5,
+      max: 2,
       step: 0.05,
       build: (m) => [
         {

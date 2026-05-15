@@ -11,6 +11,7 @@ Two programs supported:
 
 from __future__ import annotations
 
+import json
 from typing import Literal
 
 import numpy as np
@@ -21,7 +22,11 @@ from pydantic import BaseModel, Field
 from .aggregate.cost import aggregate as aggregate_cost
 from .aggregate.distribution import by_household_income_decile
 from .aggregate.reform import compare as compare_reform
-from .data.ecps_loader import load_state, load_state_tax_units
+from .data.ecps_loader import (
+    load_state,
+    load_state_tax_units,
+    sum_person_to_tax_unit,
+)
 from .run.microsim import (
     ParameterOverride,
     run_co_snap,
@@ -118,6 +123,82 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+# --- /compare ---------------------------------------------------------------
+# Run PE on the same scope as Axiom and return its aggregate. PE lives in
+# its own venv (~/policyengine.py/.venv) so we subprocess into it. Slow
+# (~100s) — UI calls this only when the user explicitly clicks.
+
+import os
+import subprocess as _subprocess
+from pathlib import Path as _Path
+
+
+_PE_PYTHON = _Path(
+    os.environ.get("AXIOM_PE_PYTHON", str(_Path.home() / "policyengine.py" / ".venv" / "bin" / "python"))
+)
+_PE_SCRIPT = _Path(__file__).resolve().parent.parent / "scripts" / "compute_pe_one.py"
+
+
+class CompareRequest(BaseModel):
+    program: Literal["co-snap", "federal-income-tax", "federal-ctc"]
+    state: str = "US"
+    year: int = 2026
+
+
+class CompareResponse(BaseModel):
+    program: str
+    state: str
+    year: int
+    pe_total: float
+    pe_n_units: int
+    pe_weighted_filers: float
+    pe_weighted_total: float
+    pe_avg_per_filer: float
+    elapsed_seconds: float
+
+
+@app.post("/compare", response_model=CompareResponse)
+def compare(req: CompareRequest) -> CompareResponse:
+    if not _PE_PYTHON.exists():
+        raise HTTPException(
+            500,
+            f"PE Python interpreter not found at {_PE_PYTHON}. "
+            f"Set AXIOM_PE_PYTHON or install policyengine_us in a venv there.",
+        )
+    import time as _time
+    t0 = _time.time()
+    proc = _subprocess.run(
+        [
+            str(_PE_PYTHON), str(_PE_SCRIPT),
+            "--program", req.program,
+            "--state", req.state,
+            "--year", str(req.year),
+        ],
+        capture_output=True, text=True, timeout=600,
+    )
+    elapsed = _time.time() - t0
+    if proc.returncode != 0:
+        raise HTTPException(500, f"PE compute failed: {proc.stderr.strip()[:1000]}")
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(500, f"PE returned non-JSON: {proc.stdout[:300]}") from exc
+    if "error" in data:
+        raise HTTPException(500, f"PE compute error: {data['error']}")
+
+    return CompareResponse(
+        program=req.program,
+        state=req.state,
+        year=req.year,
+        pe_total=data["pe_total"],
+        pe_n_units=data["pe_n_units"],
+        pe_weighted_filers=data["pe_weighted_filers"],
+        pe_weighted_total=data["pe_weighted_total"],
+        pe_avg_per_filer=data["pe_avg_per_filer"],
+        elapsed_seconds=elapsed,
+    )
+
+
 @app.post("/microsim", response_model=MicrosimResponse)
 def microsim(req: MicrosimRequest) -> MicrosimResponse:
     overrides = [o.to_runtime() for o in req.overrides]
@@ -192,7 +273,7 @@ def _run_federal_income_tax(
         if weighted_filers > 0 else 0.0
     )
 
-    deciles = _tax_deciles(base_tax, weight)
+    deciles = _decile_by_axis(base_tax, weight, _tax_unit_agi(batch))
 
     response = MicrosimResponse(
         program=baseline.program,
@@ -262,7 +343,7 @@ def _run_federal_ctc(req: MicrosimRequest, overrides: list[ParameterOverride]) -
         if weighted_recipients > 0 else 0.0
     )
 
-    deciles = _tax_deciles(base_credit, weight)
+    deciles = _decile_by_axis(base_credit, weight, _tax_unit_agi(batch))
 
     response = MicrosimResponse(
         program=baseline.program,
@@ -308,6 +389,74 @@ def _run_federal_ctc(req: MicrosimRequest, overrides: list[ParameterOverride]) -
         )
 
     return response
+
+
+AGI_INCOME_COLUMNS: tuple[str, ...] = (
+    "employment_income_before_lsr",
+    "self_employment_income_before_lsr",
+    "taxable_interest_income",
+    "qualified_dividend_income",
+    "non_qualified_dividend_income",
+    "taxable_pension_income",
+    "rental_income",
+    "alimony_income",
+    "tip_income",
+    "miscellaneous_income",
+)
+
+
+def _tax_unit_agi(batch) -> np.ndarray:
+    """Sum ECPS person-level income components to a per-tax-unit AGI proxy."""
+    agi = np.zeros(batch.n_tax_units, dtype=np.float64)
+    for col in AGI_INCOME_COLUMNS:
+        if col in batch.person_columns:
+            agi += sum_person_to_tax_unit(
+                batch.person_columns[col], batch.person_tax_unit_index, batch.n_tax_units
+            )
+    return agi
+
+
+def _decile_by_axis(
+    values: np.ndarray,
+    weights: np.ndarray,
+    axis: np.ndarray,
+) -> list[DecileBinOut]:
+    """Group rows by weighted decile of `axis`, report mean `values` per bin.
+
+    Use AGI as the axis for tax-unit programs and gross household income
+    for SNAP — the standard distributional convention.
+    """
+    order = np.argsort(axis)
+    a = axis[order]
+    w = weights[order]
+    cw = np.cumsum(w)
+    if cw[-1] == 0:
+        return []
+    cuts_q = np.linspace(0, 1, 11)
+    cuts = np.interp(cuts_q, (cw - 0.5 * w) / cw[-1], a)
+    cuts[0] = -np.inf
+    cuts[-1] = np.inf
+
+    bins: list[DecileBinOut] = []
+    for i in range(10):
+        lo, hi = cuts[i], cuts[i + 1]
+        mask = (axis >= lo) & (axis < hi) if i < 9 else (axis >= lo)
+        wm = weights[mask]
+        vm = values[mask]
+        total_w = float(wm.sum())
+        mean_v = float((vm * wm).sum() / total_w) if total_w else 0.0
+        share = float(wm[vm > 0].sum() / total_w) if total_w else 0.0
+        bins.append(
+            DecileBinOut(
+                decile=i + 1,
+                income_floor=float(lo) if np.isfinite(lo) else 0.0,
+                income_ceiling=float(hi) if np.isfinite(hi) else float(axis.max()),
+                households_weighted=total_w,
+                mean_monthly_benefit=mean_v,
+                share_receiving=share,
+            )
+        )
+    return bins
 
 
 def _tax_deciles(tax: np.ndarray, weight: np.ndarray) -> list[DecileBinOut]:

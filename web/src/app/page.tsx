@@ -4,18 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { DecileChart } from "@/components/DecileChart";
 import { WinnersLosers } from "@/components/WinnersLosers";
-import { PROGRAMS, programById, type ProgramId } from "@/lib/levers";
+import { PROGRAMS, programById, type Lever, type ProgramId } from "@/lib/levers";
 import { fmtCount, fmtCurrency } from "@/lib/format";
-import type {
-  MicrosimRequest,
-  MicrosimResponse,
-  PeComparison,
-  PeProgramNumbers,
-} from "@/lib/types";
+import type { MicrosimRequest, MicrosimResponse } from "@/lib/types";
 
 const YEAR = 2026;
-const initialMultipliers = (programId: ProgramId): Record<string, number> =>
-  Object.fromEntries(programById(programId).levers.map((l) => [l.id, 1]));
+
+const initialDraft = (programId: ProgramId): Record<string, number> =>
+  Object.fromEntries(programById(programId).levers.map((l) => [l.id, l.baseline]));
 
 interface RunState {
   data: MicrosimResponse | null;
@@ -25,68 +21,79 @@ interface RunState {
 }
 const initial: RunState = { data: null, loadingMs: null, startedAt: null, error: null };
 
+interface PeState {
+  total: number | null;
+  filers: number | null;
+  avg: number | null;
+  loadingMs: number | null;
+  startedAt: number | null;
+  error: string | null;
+}
+const peInitial: PeState = {
+  total: null, filers: null, avg: null,
+  loadingMs: null, startedAt: null, error: null,
+};
+
 export default function Page() {
   const [programId, setProgramId] = useState<ProgramId>("federal-ctc");
   const program = useMemo(() => programById(programId), [programId]);
   const [state, setState] = useState<string>(program.default_state);
-  const [draft, setDraft] = useState<Record<string, number>>(() => initialMultipliers(programId));
-  const [applied, setApplied] = useState<Record<string, number>>(() => initialMultipliers(programId));
+  const [draft, setDraft] = useState<Record<string, number>>(() => initialDraft(programId));
+  const [applied, setApplied] = useState<Record<string, number>>(() => initialDraft(programId));
   const [baseline, setBaseline] = useState<RunState>(initial);
   const [reform, setReform] = useState<RunState>(initial);
+  const [pe, setPe] = useState<PeState>(peInitial);
   const [now, setNow] = useState(Date.now());
-  const [peData, setPeData] = useState<PeComparison | null>(null);
 
-  // Load the cached PE comparison once on mount.
-  useEffect(() => {
-    fetch("/comparison.json")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setPeData(d as PeComparison | null))
-      .catch(() => setPeData(null));
-  }, []);
-
-  const peNumbers = useMemo<PeProgramNumbers | null>(() => {
-    if (!peData) return null;
-    if (programId === "federal-income-tax") return peData.federal_income_tax;
-    if (programId === "co-snap") return peData.co_snap;
-    if (programId === "federal-ctc") return peData.federal_ctc;
-    return null;
-  }, [peData, programId]);
-
-  // Reset state when program changes.
+  // Reset everything when program / state changes.
   useEffect(() => {
     setState(program.default_state);
-    setDraft(initialMultipliers(programId));
-    setApplied(initialMultipliers(programId));
+    setDraft(initialDraft(programId));
+    setApplied(initialDraft(programId));
     setBaseline(initial);
     setReform(initial);
+    setPe(peInitial);
   }, [programId, program.default_state]);
+
+  // Re-set the slider draft whenever the state changes too.
+  useEffect(() => {
+    setDraft(initialDraft(programId));
+    setApplied(initialDraft(programId));
+    setReform(initial);
+    setPe(peInitial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
 
   const dirty = useMemo(
     () => program.levers.some((l) => draft[l.id] !== applied[l.id]),
     [draft, applied, program.levers],
   );
   const draftReforming = useMemo(
-    () => program.levers.some((l) => draft[l.id] !== 1),
+    () => program.levers.some((l) => draft[l.id] !== l.baseline),
     [draft, program.levers],
   );
   const appliedReforming = useMemo(
-    () => program.levers.some((l) => applied[l.id] !== 1),
+    () => program.levers.some((l) => applied[l.id] !== l.baseline),
     [applied, program.levers],
   );
 
   useEffect(() => {
-    if (baseline.startedAt === null && reform.startedAt === null) return;
+    if (
+      baseline.startedAt === null &&
+      reform.startedAt === null &&
+      pe.startedAt === null
+    ) return;
     const id = setInterval(() => setNow(Date.now()), 200);
     return () => clearInterval(id);
-  }, [baseline.startedAt, reform.startedAt]);
+  }, [baseline.startedAt, reform.startedAt, pe.startedAt]);
 
   const runMicrosim = useCallback(
-    async (kind: "baseline" | "reform", multipliers: Record<string, number>) => {
+    async (kind: "baseline" | "reform", values: Record<string, number>) => {
       const setter = kind === "baseline" ? setBaseline : setReform;
       const overrides =
         kind === "reform"
           ? program.levers.flatMap((l) =>
-              multipliers[l.id] === 1 ? [] : l.build(multipliers[l.id]),
+              values[l.id] === l.baseline ? [] : l.build(values[l.id]),
             )
           : [];
 
@@ -103,7 +110,7 @@ export default function Page() {
         if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
         const data = (await r.json()) as MicrosimResponse;
         setter({ data, loadingMs: Date.now() - startedAt, startedAt: null, error: null });
-        if (kind === "reform") setApplied(multipliers);
+        if (kind === "reform") setApplied(values);
       } catch (e) {
         setter({
           data: null,
@@ -116,8 +123,36 @@ export default function Page() {
     [programId, state, program.levers],
   );
 
+  const runPe = useCallback(async () => {
+    const startedAt = Date.now();
+    setPe((prev) => ({ ...prev, loadingMs: 0, startedAt, error: null }));
+    try {
+      const r = await fetch("/api/compare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ program: programId, state, year: YEAR }),
+      });
+      if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
+      const data = await r.json();
+      setPe({
+        total: data.pe_total,
+        filers: data.pe_weighted_filers,
+        avg: data.pe_avg_per_filer,
+        loadingMs: Date.now() - startedAt,
+        startedAt: null,
+        error: null,
+      });
+    } catch (e) {
+      setPe({
+        total: null, filers: null, avg: null,
+        loadingMs: null, startedAt: null,
+        error: String((e as Error).message ?? e),
+      });
+    }
+  }, [programId, state]);
+
   useEffect(() => {
-    void runMicrosim("baseline", initialMultipliers(programId));
+    void runMicrosim("baseline", initialDraft(programId));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [programId, state]);
 
@@ -128,13 +163,7 @@ export default function Page() {
 
   const baselineRunning = baseline.startedAt !== null;
   const reformRunning = reform.startedAt !== null;
-
-  // PE accessors.
-  const peHeadline = pePrimaryValue(peNumbers, programId);
-  const peHeadlineRatio =
-    peHeadline != null && baseline.data
-      ? `${((baseline.data.baseline.annual_cost / peHeadline) * 100).toFixed(0)}%`
-      : null;
+  const peRunning = pe.startedAt !== null;
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-12">
@@ -232,14 +261,16 @@ export default function Page() {
         />
       </section>
 
-      {/* PE side-by-side panel — always visible */}
-      <PeComparisonPanel
-        pe={peNumbers}
-        peData={peData}
-        programId={programId}
+      {/* PE comparison panel — live, opt-in */}
+      <PePanel
+        pe={pe}
+        running={peRunning}
+        elapsed={peRunning ? (now - (pe.startedAt ?? now)) / 1000 : null}
+        onRun={runPe}
         axiomBaseline={baseline.data?.baseline.annual_cost}
         axiomFilers={baseline.data?.baseline.households_with_benefit}
         axiomAvg={baseline.data?.baseline.average_monthly_benefit}
+        programId={programId}
       />
 
       <div className="grid gap-6 lg:grid-cols-[340px,1fr]">
@@ -249,37 +280,15 @@ export default function Page() {
             Reform parameters
           </h2>
 
-          {program.levers.map((l) => {
-            const m = draft[l.id];
-            const a = applied[l.id];
-            const changed = m !== a;
-            return (
-              <div key={l.id} className="space-y-2">
-                <div className="flex items-baseline justify-between gap-3">
-                  <label className="text-sm font-medium text-ink">{l.label}</label>
-                  <span
-                    className={`font-mono text-xs tabular-nums ${
-                      changed ? "font-semibold text-warning" : "text-ink-secondary"
-                    }`}
-                  >
-                    {(m * 100).toFixed(0)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={l.min_multiplier}
-                  max={l.max_multiplier}
-                  step={l.step}
-                  value={m}
-                  onChange={(e) =>
-                    setDraft((prev) => ({ ...prev, [l.id]: Number(e.target.value) }))
-                  }
-                  className="w-full"
-                />
-                <div className="text-xs text-ink-muted">{l.description}</div>
-              </div>
-            );
-          })}
+          {program.levers.map((l) => (
+            <LeverControl
+              key={l.id}
+              lever={l}
+              value={draft[l.id]}
+              applied={applied[l.id]}
+              onChange={(v) => setDraft((prev) => ({ ...prev, [l.id]: v }))}
+            />
+          ))}
 
           <button
             onClick={onRunReform}
@@ -303,7 +312,7 @@ export default function Page() {
 
           <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={() => setDraft(initialMultipliers(programId))}
+              onClick={() => setDraft(initialDraft(programId))}
               disabled={!draftReforming}
               className="rounded-sm border border-rule px-3 py-1.5 text-xs text-ink-secondary hover:bg-rule-subtle disabled:cursor-not-allowed disabled:text-ink-muted"
             >
@@ -312,7 +321,7 @@ export default function Page() {
             <button
               onClick={() => {
                 setReform(initial);
-                setApplied(initialMultipliers(programId));
+                setApplied(initialDraft(programId));
               }}
               disabled={!appliedReforming}
               className="rounded-sm border border-rule px-3 py-1.5 text-xs text-ink-secondary hover:bg-rule-subtle disabled:cursor-not-allowed disabled:text-ink-muted"
@@ -331,10 +340,14 @@ export default function Page() {
             </div>
           )}
 
-          <Card title="Distribution by decile" subtitle={decileSubtitle(programId)}>
+          <Card title="Distribution by income decile" subtitle={decileSubtitle(programId)}>
             {baseline.data && (
               <div className="h-72 w-full">
-                <DecileChart bins={baseline.data.baseline.decile_distribution} />
+                <DecileChart
+                  bins={baseline.data.baseline.decile_distribution}
+                  metricLabel={decileMetricLabel(programId)}
+                  metricSuffix={programId === "co-snap" ? "/mo" : "/yr"}
+                />
               </div>
             )}
           </Card>
@@ -363,9 +376,7 @@ export default function Page() {
             {baseline.data?.n_persons_sampled.toLocaleString() ?? "—"} persons ·{" "}
             <code className="font-mono">enhanced_cps_2024.h5</code> · engine{" "}
             <code className="font-mono">axiom-rules-engine</code>. See{" "}
-            <a href="/methodology" className="text-accent underline">
-              /methodology
-            </a>{" "}
+            <a href="/methodology" className="text-accent underline">/methodology</a>{" "}
             for slot mappings, calculations, and limitations.
           </footer>
         </section>
@@ -377,38 +388,74 @@ export default function Page() {
 
 // --- pieces -----------------------------------------------------------------
 
-function Headline({
-  eyebrow,
+function LeverControl({
+  lever,
   value,
-  sub,
-  loading,
-  loadingElapsed,
-  accent,
+  applied,
+  onChange,
 }: {
-  eyebrow: string;
-  value: string;
-  sub: string;
-  loading: boolean;
-  loadingElapsed: number | null;
-  accent?: string;
+  lever: Lever;
+  value: number;
+  applied: number;
+  onChange: (v: number) => void;
+}) {
+  const changed = value !== applied;
+  const isAmount = lever.kind === "amount";
+  const display = isAmount
+    ? fmtCurrency(value)
+    : `${(value * 100).toFixed(0)}%`;
+  const appliedDisplay = isAmount
+    ? fmtCurrency(applied)
+    : `${(applied * 100).toFixed(0)}%`;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <label className="text-sm font-medium text-ink">{lever.label}</label>
+        <span
+          className={`font-mono text-xs tabular-nums ${
+            changed ? "font-semibold text-warning" : "text-ink-secondary"
+          }`}
+        >
+          {display}
+          {changed && (
+            <span className="ml-1 text-ink-muted">(was {appliedDisplay})</span>
+          )}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={lever.min}
+        max={lever.max}
+        step={lever.step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full"
+      />
+      <div className="text-xs text-ink-muted">{lever.description}</div>
+      <div className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
+        baseline · {lever.baseline_label}
+      </div>
+    </div>
+  );
+}
+
+function Headline({
+  eyebrow, value, sub, loading, loadingElapsed, accent,
+}: {
+  eyebrow: string; value: string; sub: string;
+  loading: boolean; loadingElapsed: number | null; accent?: string;
 }) {
   return (
     <div className="rounded-md border border-rule bg-paper-elev p-6">
       <div className="font-mono text-[0.7rem] uppercase tracking-eyebrow text-ink-muted">
         {eyebrow}
       </div>
-      <div
-        className={`mt-3 font-serif text-[3rem] leading-none tracking-tight ${
-          accent ?? "text-ink"
-        }`}
-      >
+      <div className={`mt-3 font-serif text-[3rem] leading-none tracking-tight ${accent ?? "text-ink"}`}>
         {loading ? (
           <span className="font-mono text-2xl text-ink-muted">
             running… {loadingElapsed?.toFixed(1)}s
           </span>
-        ) : (
-          value
-        )}
+        ) : value}
       </div>
       <div className="mt-3 text-sm text-ink-secondary">{sub}</div>
     </div>
@@ -416,14 +463,8 @@ function Headline({
 }
 
 function Card({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
+  title, subtitle, children,
+}: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
     <div className="rounded-md border border-rule bg-paper-elev p-6">
       <h3 className="font-serif text-lg text-ink">{title}</h3>
@@ -433,134 +474,113 @@ function Card({
   );
 }
 
-function PeComparisonPanel({
-  pe,
-  peData,
-  programId,
-  axiomBaseline,
-  axiomFilers,
-  axiomAvg,
+function PePanel({
+  pe, running, elapsed, onRun,
+  axiomBaseline, axiomFilers, axiomAvg, programId,
 }: {
-  pe: PeProgramNumbers | null;
-  peData: PeComparison | null;
-  programId: ProgramId;
+  pe: PeState;
+  running: boolean;
+  elapsed: number | null;
+  onRun: () => void;
   axiomBaseline?: number;
   axiomFilers?: number;
   axiomAvg?: number;
+  programId: ProgramId;
 }) {
-  if (!peData) {
-    return (
-      <div className="mb-8 rounded-md border border-dashed border-rule bg-rule-subtle p-4 text-xs text-ink-muted">
-        Loading PolicyEngine comparison…
-      </div>
-    );
-  }
-  if (!pe) {
-    return (
-      <div className="mb-8 rounded-md border border-dashed border-rule bg-rule-subtle p-4 text-xs text-ink-muted">
-        No PolicyEngine comparison cached for{" "}
-        <code className="font-mono">{programId}</code> yet. Run{" "}
-        <code className="font-mono">scripts/refresh_pe_comparison.py</code>.
-      </div>
-    );
-  }
+  const ratio = (a?: number | null, p?: number | null) =>
+    a != null && p != null && p !== 0 ? `${((a / p) * 100).toFixed(0)}%` : "—";
 
-  const peTotal =
-    programId === "federal-income-tax"
-      ? pe.pe_total_revenue
-      : programId === "federal-ctc"
-        ? (pe as PeProgramNumbers & { pe_total_cost?: number }).pe_total_cost ??
-          pe.pe_total_annual_cost
-        : pe.pe_total_annual_cost;
-
-  const peFilers =
-    programId === "federal-income-tax"
-      ? pe.pe_weighted_filers
-      : pe.pe_weighted_recipients;
-
-  const peAvg = pe.pe_avg_per_filer;
-
-  const ratioStr = (axiom?: number, p?: number) =>
-    axiom != null && p != null && p !== 0
-      ? `${((axiom / p) * 100).toFixed(0)}%`
-      : "—";
+  const hasResult = pe.total != null;
 
   return (
     <div className="mb-8 rounded-md border border-rule bg-paper-elev p-5">
-      <div className="mb-4 flex items-baseline justify-between">
+      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
         <div>
           <div className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-accent">
             Side-by-side · PolicyEngine
           </div>
           <h3 className="mt-1 font-serif text-lg text-ink">
-            Same dataset, same scope, same parameter values.
+            Live comparison — same dataset, same parameters, computed fresh.
           </h3>
         </div>
-        <div className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
-          PE precomputed {peData.computed_at.slice(0, 10)}
+        <button
+          onClick={onRun}
+          disabled={running}
+          className={`rounded-sm px-3 py-2 font-mono text-xs uppercase tracking-eyebrow transition ${
+            running
+              ? "cursor-wait bg-accent-hover text-white"
+              : "bg-accent text-white hover:bg-accent-hover"
+          }`}
+          title="Run PolicyEngine on the same scope (~100s)"
+        >
+          {running
+            ? `Running PE… ${elapsed?.toFixed(1)}s`
+            : hasResult
+              ? "▶ Re-run PE comparison"
+              : "▶ Run PE comparison"}
+        </button>
+      </div>
+
+      {pe.error && (
+        <div className="mb-3 rounded-sm border border-error bg-paper p-3 text-sm text-error">
+          {pe.error}
         </div>
-      </div>
-      <div className="overflow-hidden rounded-sm border border-rule">
-        <table className="w-full border-collapse text-sm">
-          <thead className="bg-rule-subtle font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
-            <tr>
-              <th className="px-3 py-2 text-left">Metric</th>
-              <th className="px-3 py-2 text-right">Axiom</th>
-              <th className="px-3 py-2 text-right">PolicyEngine</th>
-              <th className="px-3 py-2 text-right">Axiom / PE</th>
-            </tr>
-          </thead>
-          <tbody className="font-mono text-sm">
-            <Row
-              metric="Annual cost / revenue"
-              axiom={axiomBaseline != null ? fmtCurrency(axiomBaseline) : "—"}
-              pe={peTotal != null ? fmtCurrency(peTotal) : "—"}
-              ratio={ratioStr(axiomBaseline, peTotal)}
-            />
-            <Row
-              metric={
-                programId === "co-snap"
-                  ? "Weighted recipients"
-                  : "Weighted units w/ liability or credit"
-              }
-              axiom={axiomFilers != null ? fmtCount(axiomFilers) : "—"}
-              pe={peFilers != null ? fmtCount(peFilers) : "—"}
-              ratio={ratioStr(axiomFilers, peFilers)}
-            />
-            {programId !== "co-snap" && (
+      )}
+
+      {!hasResult && !running && !pe.error && (
+        <p className="text-xs text-ink-muted">
+          Click <em>Run PE comparison</em> to compute the same aggregate in PolicyEngine.
+          Takes ~100 s; nothing is cached, every click recomputes both sides fresh.
+        </p>
+      )}
+
+      {(hasResult || running) && (
+        <div className="overflow-hidden rounded-sm border border-rule">
+          <table className="w-full border-collapse text-sm">
+            <thead className="bg-rule-subtle font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
+              <tr>
+                <th className="px-3 py-2 text-left">Metric</th>
+                <th className="px-3 py-2 text-right">Axiom</th>
+                <th className="px-3 py-2 text-right">PolicyEngine</th>
+                <th className="px-3 py-2 text-right">Axiom / PE</th>
+              </tr>
+            </thead>
+            <tbody className="font-mono text-sm">
               <Row
-                metric={programId === "federal-ctc" ? "Avg credit per recipient" : "Avg per filer"}
-                axiom={axiomAvg != null ? fmtCurrency(axiomAvg) : "—"}
-                pe={peAvg != null ? fmtCurrency(peAvg) : "—"}
-                ratio={ratioStr(axiomAvg, peAvg)}
+                metric="Annual cost / revenue"
+                axiom={axiomBaseline != null ? fmtCurrency(axiomBaseline) : "—"}
+                pe={pe.total != null ? fmtCurrency(pe.total) : "—"}
+                ratio={ratio(axiomBaseline, pe.total)}
               />
-            )}
-          </tbody>
-        </table>
-      </div>
-      <p className="mt-3 text-xs text-ink-muted">
-        Axiom vs PE differences come from v1 limitations documented on{" "}
-        <a href="/methodology" className="text-accent underline">
-          /methodology
-        </a>{" "}
-        — they are not encoding disagreements. Reform comparisons stay Axiom-only
-        (a PE rerun would block ~2 minutes).
-      </p>
+              <Row
+                metric={programId === "co-snap" ? "Weighted recipients" : "Weighted units affected"}
+                axiom={axiomFilers != null ? fmtCount(axiomFilers) : "—"}
+                pe={pe.filers != null ? fmtCount(pe.filers) : "—"}
+                ratio={ratio(axiomFilers, pe.filers)}
+              />
+              <Row
+                metric={programId === "co-snap" ? "Avg monthly benefit" : programId === "federal-ctc" ? "Avg credit per recipient" : "Avg per filer"}
+                axiom={axiomAvg != null ? fmtCurrency(axiomAvg) : "—"}
+                pe={pe.avg != null ? fmtCurrency(pe.avg) : "—"}
+                ratio={ratio(axiomAvg, pe.avg)}
+              />
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {hasResult && pe.loadingMs && (
+        <p className="mt-3 font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
+          PE computed in {(pe.loadingMs / 1000).toFixed(1)}s · see{" "}
+          <a href="/methodology" className="text-accent underline">/methodology</a>{" "}
+          for what each side does and doesn't model.
+        </p>
+      )}
     </div>
   );
 }
 
-function Row({
-  metric,
-  axiom,
-  pe,
-  ratio,
-}: {
-  metric: string;
-  axiom: string;
-  pe: string;
-  ratio: string;
-}) {
+function Row({ metric, axiom, pe, ratio }: { metric: string; axiom: string; pe: string; ratio: string }) {
   return (
     <tr className="border-t border-rule">
       <td className="px-3 py-2 font-sans text-ink">{metric}</td>
@@ -573,16 +593,14 @@ function Row({
 
 function decileSubtitle(programId: ProgramId): string {
   if (programId === "co-snap")
-    return "Households grouped by weighted decile of gross annual income.";
-  if (programId === "federal-income-tax")
-    return "Tax units grouped by decile of their tax liability. D10 = top payers.";
-  return "Tax units grouped by decile of their CTC amount. D10 = largest credits.";
+    return "Households grouped by weighted decile of gross annual income. D1 = lowest income, D10 = highest.";
+  return "Tax units grouped by weighted decile of AGI. D1 = lowest income, D10 = highest.";
 }
 
-function pePrimaryValue(pe: PeProgramNumbers | null, programId: ProgramId): number | undefined {
-  if (!pe) return undefined;
-  if (programId === "federal-income-tax") return pe.pe_total_revenue;
-  return pe.pe_total_annual_cost;
+function decileMetricLabel(programId: ProgramId): string {
+  if (programId === "co-snap") return "Mean monthly SNAP";
+  if (programId === "federal-income-tax") return "Mean income tax per tax unit";
+  return "Mean CTC per tax unit";
 }
 
 function fmtSignedCurrency(n: number): string {

@@ -1,5 +1,5 @@
 {
-  "computed_at": "2026-05-15T14:59:56Z",
+  "computed_at": "2026-05-15T15:18:51Z",
   "year": 2026,
   "dataset": "enhanced_cps_2024 (uprated to 2026)",
   "federal_income_tax": {
@@ -28,5 +28,7 @@
     "pe_weighted_co_households": 2729419.231420338,
     "pe_weighted_recipients": 455597.11949157715
   },
-  "errors": []
+  "errors": [
+    "federal_ctc: name 'compute_pe_federal_ctc' is not defined"
+  ]
 }

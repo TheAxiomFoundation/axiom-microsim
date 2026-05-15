@@ -116,6 +116,10 @@ image = (
     .add_local_dir(
         ".", "/opt/axiom-microsim",
         ignore=["**/node_modules", "**/.next", "web/**", ".venv/**", "engine/**"],
+        # copy=True so we can run `pip install /opt/axiom-microsim` after.
+        # Without it Modal mounts the dir at container startup, but build
+        # steps can't see it.
+        copy=True,
     )
     .run_commands("pip install /opt/axiom-microsim")
     .env({

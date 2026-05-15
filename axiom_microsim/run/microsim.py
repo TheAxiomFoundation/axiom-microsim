@@ -284,8 +284,11 @@ def _artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path
             "Run scripts/setup_engine.sh once."
         )
     scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-"))
-    dst_us = scratch / "rules-us"
-    dst_us_co = scratch / "rules-us-co"
+    # Preserve the source dir name so the engine's import resolver
+    # finds it via ancestor traversal. In Modal these are
+    # `rulespec-us` / `rulespec-us-co`; locally `rules-us` / etc.
+    dst_us = scratch / RULES_US_DIR.name
+    dst_us_co = scratch / RULES_US_CO_DIR.name
     shutil.copytree(RULES_US_DIR, dst_us, symlinks=False)
     shutil.copytree(RULES_US_CO_DIR, dst_us_co, symlinks=False)
     for ov in overrides:
@@ -311,7 +314,7 @@ def _ctc_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, 
     if not RULES_US_DIR.exists():
         raise FileNotFoundError(f"rules-us missing at {RULES_US_DIR}")
     scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-ctc-"))
-    dst = scratch / "rules-us"
+    dst = scratch / RULES_US_DIR.name      # preserve naming so engine resolves imports
     shutil.copytree(RULES_US_DIR, dst, symlinks=False)
     for ov in overrides:
         if ov.repo != "rules-us":
@@ -435,7 +438,7 @@ def _fed_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, 
     if not RULES_US_DIR.exists():
         raise FileNotFoundError(f"rules-us missing at {RULES_US_DIR}")
     scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-fed-"))
-    dst = scratch / "rules-us"
+    dst = scratch / RULES_US_DIR.name      # preserve naming
     shutil.copytree(RULES_US_DIR, dst, symlinks=False)
     for ov in overrides:
         if ov.repo != "rules-us":

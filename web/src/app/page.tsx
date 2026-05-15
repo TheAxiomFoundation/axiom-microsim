@@ -38,14 +38,20 @@ export default function Page() {
   const [programId, setProgramId] = useState<ProgramId>("federal-ctc");
   const program = useMemo(() => programById(programId), [programId]);
   const [state, setState] = useState<string>(program.default_state);
-  const [draft, setDraft] = useState<Record<string, number>>(() => initialDraft(programId));
-  const [applied, setApplied] = useState<Record<string, number>>(() => initialDraft(programId));
+  // Eagerly initialise draft / applied for the current program so the
+  // first render of LeverControl always has a defined value (no
+  // controlled→uncontrolled flicker when the program toggles).
+  const [draft, setDraft] = useState<Record<string, number>>(() => initialDraft("federal-ctc"));
+  const [applied, setApplied] = useState<Record<string, number>>(() => initialDraft("federal-ctc"));
   const [baseline, setBaseline] = useState<RunState>(initial);
   const [reform, setReform] = useState<RunState>(initial);
   const [pe, setPe] = useState<PeState>(peInitial);
   const [now, setNow] = useState(Date.now());
 
-  // Reset everything when program / state changes.
+  // Reset everything when program / state changes. Use the functional
+  // form so the new draft is computed from the new programId synchronously
+  // — and combine with a useMemo guard to avoid the brief render where
+  // draft is keyed for the OLD program but levers come from the NEW one.
   useEffect(() => {
     setState(program.default_state);
     setDraft(initialDraft(programId));
@@ -284,8 +290,11 @@ export default function Page() {
             <LeverControl
               key={l.id}
               lever={l}
-              value={draft[l.id]}
-              applied={applied[l.id]}
+              // Default to the lever's baseline when draft hasn't been
+              // initialised for this lever yet (happens for one render
+              // when the program switches before the reset effect runs).
+              value={draft[l.id] ?? l.baseline}
+              applied={applied[l.id] ?? l.baseline}
               onChange={(v) => setDraft((prev) => ({ ...prev, [l.id]: v }))}
             />
           ))}

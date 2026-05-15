@@ -1,0 +1,44 @@
+[project]
+name = "axiom-microsim"
+version = "0.1.0"
+description = "PE-free microsimulation over Enhanced CPS using axiom-rules-engine"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "h5py>=3.10",
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "ruamel.yaml>=0.18",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.6",
+    # axiom-rules-engine is installed separately from the local checkout
+    # (or via `pip install /path/to/axiom-rules-engine/python` in CI).
+    # Not pinned here so this package can be built without that path.
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "httpx>=0.27",
+]
+microdf = ["microdf-python>=1.0"]
+
+[project.scripts]
+axiom-microsim = "axiom_microsim.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["axiom_microsim"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

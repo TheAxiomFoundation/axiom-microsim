@@ -1,0 +1,30 @@
+__pycache__/
+*.pyc
+.venv/
+.uv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Engine artifacts (built locally / in Modal image)
+engine/axiom-rules-engine/
+engine/rules-us/
+engine/rules-us-co/
+engine/artifacts/*.compiled.json
+engine/artifacts/.tmp-*
+
+# Cached ECPS data
+data/cache/
+
+# Frontend
+web/node_modules/
+web/.next/
+web/out/
+.vercel
+.env*.local
+.env
+
+.DS_Store

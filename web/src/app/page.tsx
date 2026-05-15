@@ -235,9 +235,13 @@ export default function Page() {
     }
   }, [programId, state]);
 
-  // Compute baseline only if we don't already have it cached. Cache hits
-  // are reflected immediately by the program/state effect above.
+  // Compute baseline only if we don't already have it cached. Skip if the
+  // current state isn't valid for this program — a state-reset effect is
+  // about to fire setState(default_state) and re-trigger this with a
+  // valid scope. (Happens when toggling from a national program to one
+  // that's state-only, like CO SNAP.)
   useEffect(() => {
+    if (!program.state_choices.includes(state)) return;
     if (baselineCache.current.has(cacheKey(programId, state, YEAR))) return;
     void runMicrosim("baseline", initialDraft(programId));
     // eslint-disable-next-line react-hooks/exhaustive-deps

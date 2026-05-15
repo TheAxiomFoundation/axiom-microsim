@@ -7,11 +7,50 @@ import { StatCard } from "@/components/StatCard";
 import { WinnersLosers } from "@/components/WinnersLosers";
 import { PROGRAMS, programById, type ProgramId } from "@/lib/levers";
 import { fmtCount, fmtCurrency } from "@/lib/format";
-import type { MicrosimRequest, MicrosimResponse } from "@/lib/types";
+import type { MicrosimRequest, MicrosimResponse, PeComparison } from "@/lib/types";
 
 const YEAR = 2026;
 const initialMultipliers = (programId: ProgramId): Record<string, number> =>
   Object.fromEntries(programById(programId).levers.map((l) => [l.id, 1]));
+
+// PE accessors: pull the right field from the cached PE comparison record.
+type PeFieldKind = "annual_cost" | "filers" | "avg";
+
+function peValueFor(
+  pe: import("@/lib/types").PeProgramNumbers | null | undefined,
+  isTax: boolean,
+  kind: PeFieldKind,
+): string | undefined {
+  if (!pe) return undefined;
+  if (kind === "annual_cost") {
+    const v = isTax ? pe.pe_total_revenue : pe.pe_total_annual_cost;
+    return v == null ? undefined : fmtCurrency(v);
+  }
+  if (kind === "filers") {
+    const v = isTax ? pe.pe_weighted_filers : pe.pe_weighted_recipients;
+    return v == null ? undefined : fmtCount(v);
+  }
+  if (kind === "avg") {
+    const v = isTax ? pe.pe_avg_per_filer : undefined;
+    return v == null ? undefined : fmtCurrency(v);
+  }
+  return undefined;
+}
+
+function peRatioFor(
+  axiom: number | undefined,
+  pe: import("@/lib/types").PeProgramNumbers | null | undefined,
+  isTax: boolean,
+  kind: PeFieldKind,
+): string | undefined {
+  if (!pe || axiom == null) return undefined;
+  let peVal: number | undefined;
+  if (kind === "annual_cost") peVal = isTax ? pe.pe_total_revenue : pe.pe_total_annual_cost;
+  else if (kind === "filers") peVal = isTax ? pe.pe_weighted_filers : pe.pe_weighted_recipients;
+  else if (kind === "avg") peVal = isTax ? pe.pe_avg_per_filer : undefined;
+  if (!peVal) return undefined;
+  return `${(axiom / peVal * 100).toFixed(0)}%`;
+}
 
 interface RunState {
   data: MicrosimResponse | null;
@@ -30,6 +69,24 @@ export default function Page() {
   const [baseline, setBaseline] = useState<RunState>(initial);
   const [reform, setReform] = useState<RunState>(initial);
   const [now, setNow] = useState(Date.now());
+  const [showPe, setShowPe] = useState(false);
+  const [peData, setPeData] = useState<PeComparison | null>(null);
+
+  // Lazy-load the cached PE comparison file when the toggle flips on.
+  useEffect(() => {
+    if (!showPe || peData) return;
+    fetch("/comparison.json")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setPeData(d as PeComparison | null))
+      .catch(() => setPeData(null));
+  }, [showPe, peData]);
+
+  const peNumbers = useMemo(() => {
+    if (!showPe || !peData) return null;
+    return programId === "federal-income-tax"
+      ? peData.federal_income_tax
+      : peData.co_snap;
+  }, [showPe, peData, programId]);
 
   // When the program changes, reset state, sliders, and runs.
   useEffect(() => {
@@ -170,6 +227,18 @@ export default function Page() {
               </select>
             </>
           )}
+
+          <label className="ml-auto inline-flex cursor-pointer items-center gap-2 rounded-sm border border-rule bg-paper-elev px-3 py-1.5">
+            <input
+              type="checkbox"
+              checked={showPe}
+              onChange={(e) => setShowPe(e.target.checked)}
+              className="h-4 w-4 accent-accent"
+            />
+            <span className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-secondary">
+              Compare with PolicyEngine
+            </span>
+          </label>
         </div>
       </header>
 
@@ -295,10 +364,24 @@ export default function Page() {
             </div>
           )}
 
+          {showPe && !peData && (
+            <div className="rounded-sm border border-dashed border-rule bg-rule-subtle px-3 py-2 text-xs text-ink-muted">
+              Loading PE comparison from <code className="font-mono">/comparison.json</code>…
+            </div>
+          )}
+          {showPe && peData && !peNumbers && (
+            <div className="rounded-sm border border-dashed border-rule bg-rule-subtle px-3 py-2 text-xs text-ink-muted">
+              No PE comparison cached for this program/scope yet. Run{" "}
+              <code className="font-mono text-[0.7rem]">scripts/refresh_pe_comparison.py</code>.
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             <StatCard
               label={`Baseline ${program.headline_label.toLowerCase()}`}
               value={baseline.data ? fmtCurrency(baseline.data.baseline.annual_cost) : "—"}
+              peValue={peValueFor(peNumbers, isTax, "annual_cost")}
+              peRatio={peRatioFor(baseline.data?.baseline.annual_cost, peNumbers, isTax, "annual_cost")}
             />
             <StatCard
               label={`Reform ${program.headline_label.toLowerCase()}`}
@@ -313,8 +396,6 @@ export default function Page() {
                       value: `${reform.data.reform.delta_annual_cost >= 0 ? "+" : ""}${fmtCurrency(
                         reform.data.reform.delta_annual_cost,
                       )}`,
-                      // For SNAP: more cost = government spending more = ambiguous.
-                      // For tax: more revenue = government collecting more.
                       positive:
                         reform.data.reform.delta_annual_cost === 0
                           ? null
@@ -322,7 +403,7 @@ export default function Page() {
                     }
                   : undefined
               }
-              hint={!reform.data?.reform ? "no reform run yet" : undefined}
+              hint={!reform.data?.reform ? "no reform run yet" : "Axiom-only · PE reform not run"}
             />
             <StatCard
               label={isTax ? "Tax units w/ liability" : "Households w/ benefit"}
@@ -331,6 +412,7 @@ export default function Page() {
                   ? fmtCount(baseline.data.baseline.households_with_benefit)
                   : "—"
               }
+              peValue={peValueFor(peNumbers, isTax, "filers")}
               hint="baseline"
             />
             <StatCard
@@ -340,6 +422,8 @@ export default function Page() {
                   ? fmtCurrency(baseline.data.baseline.average_monthly_benefit)
                   : "—"
               }
+              peValue={peValueFor(peNumbers, isTax, "avg")}
+              peRatio={peRatioFor(baseline.data?.baseline.average_monthly_benefit, peNumbers, isTax, "avg")}
               hint={isTax ? "baseline · per filer" : "baseline · per recipient"}
             />
           </div>
@@ -392,13 +476,25 @@ export default function Page() {
             )}
           </div>
 
-          <footer className="pt-4 text-xs text-ink-muted">
-            ECPS sample: {baseline.data?.n_households_sampled.toLocaleString() ?? "—"}{" "}
-            {isTax ? "tax units" : "households"} ·{" "}
-            {baseline.data?.n_persons_sampled.toLocaleString() ?? "—"} persons ·{" "}
-            <code className="font-mono text-[0.72rem]">enhanced_cps_2024.h5</code>.
-            Engine: <code className="font-mono text-[0.72rem]">axiom-rules-engine</code>{" "}
-            via execute-compiled. {isTax && "v1 ordinary brackets only — excludes capital gains, AMT, and credits."}
+          <footer className="space-y-1 pt-4 text-xs text-ink-muted">
+            <div>
+              ECPS sample: {baseline.data?.n_households_sampled.toLocaleString() ?? "—"}{" "}
+              {isTax ? "tax units" : "households"} ·{" "}
+              {baseline.data?.n_persons_sampled.toLocaleString() ?? "—"} persons ·{" "}
+              <code className="font-mono text-[0.72rem]">enhanced_cps_2024.h5</code>.
+              Engine: <code className="font-mono text-[0.72rem]">axiom-rules-engine</code>{" "}
+              via execute-compiled. {isTax && "v1 ordinary brackets only — excludes capital gains, AMT, and credits."}
+            </div>
+            {showPe && peData && (
+              <div>
+                PE comparison precomputed{" "}
+                <code className="font-mono text-[0.72rem]">{peData.computed_at}</code>{" "}
+                via <code className="font-mono text-[0.72rem]">policyengine_us.Microsimulation</code>.
+                Reform comparisons not run live (would block the request for ~2 min).
+                See <a href="/methodology" className="text-accent underline">/methodology</a>{" "}
+                for the full side-by-side table and assumptions.
+              </div>
+            )}
           </footer>
         </section>
       </div>

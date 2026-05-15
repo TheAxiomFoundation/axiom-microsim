@@ -49,8 +49,33 @@ export interface Override {
 }
 
 export interface MicrosimRequest {
-  program: "co-snap";
+  program: "co-snap" | "federal-income-tax";
   state: string;
   year: number;
   overrides: Override[];
+}
+
+export interface PeComparison {
+  computed_at: string;
+  year: number;
+  dataset: string;
+  federal_income_tax: PeProgramNumbers | null;
+  co_snap: PeProgramNumbers | null;
+  errors: string[];
+}
+
+export interface PeProgramNumbers {
+  scope: string;
+  axiom_output: string;
+  pe_variable: string;
+  // Federal income tax fields
+  pe_total_revenue?: number;
+  pe_n_tax_units?: number;
+  pe_weighted_filers?: number;
+  pe_weighted_total?: number;
+  pe_avg_per_filer?: number;
+  // SNAP fields
+  pe_total_annual_cost?: number;
+  pe_weighted_co_households?: number;
+  pe_weighted_recipients?: number;
 }

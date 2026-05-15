@@ -1,11 +1,32 @@
 {
-  "computed_at": "2026-05-15T14:50:46Z",
+  "computed_at": "2026-05-15T14:59:56Z",
   "year": 2026,
-  "dataset": "enhanced_cps_2024_2026",
-  "federal_income_tax": null,
-  "co_snap": null,
-  "errors": [
-    "federal_income_tax: 'income_tax_main_rates'",
-    "co_snap: 'state_code_str'"
-  ]
+  "dataset": "enhanced_cps_2024 (uprated to 2026)",
+  "federal_income_tax": {
+    "scope": "US",
+    "axiom_output": "income_tax_main_rates",
+    "pe_variable": "income_tax_main_rates",
+    "axiom_total_revenue": 1606600000000.0,
+    "axiom_n_tax_units": 30114,
+    "axiom_weighted_filers": 115000000,
+    "axiom_avg_per_filer": 13973,
+    "pe_total_revenue": 1863322619739.4863,
+    "pe_n_tax_units": 55264,
+    "pe_weighted_filers": 111127563.91769305,
+    "pe_weighted_total": 196636594.6314206,
+    "pe_avg_per_filer": 16767.420737482935
+  },
+  "co_snap": {
+    "scope": "CO",
+    "axiom_output": "snap_allotment (\u00d7 12 for annual)",
+    "pe_variable": "snap (monthly \u00d7 12)",
+    "axiom_total_annual_cost": 3983033714.0,
+    "axiom_n_households": 413,
+    "axiom_weighted_recipients": 735085,
+    "axiom_avg_monthly_benefit": 452,
+    "pe_total_annual_cost": 1820365660.4777231,
+    "pe_weighted_co_households": 2729419.231420338,
+    "pe_weighted_recipients": 455597.11949157715
+  },
+  "errors": []
 }

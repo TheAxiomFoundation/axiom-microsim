@@ -93,20 +93,26 @@ def compute_pe_federal_income_tax(sim, year: int) -> dict:
 
 
 def compute_pe_co_snap(sim, year: int) -> dict:
-    """Sum SNAP × spm_unit_weight × 12 for SPM units in CO."""
+    """Sum monthly SNAP × household_weight × 12 for households in CO.
+
+    SNAP is an SPM-unit-level variable, but `state_code_str` lives on the
+    household. We aggregate SNAP up to the household with `map_to=...`
+    so we can filter by household state cleanly.
+    """
     print(f"[PE] computing CO SNAP for {year}...", flush=True)
     t0 = time.time()
-    # SNAP is a monthly variable. PE annualises in calculate() via its
-    # period broadcasting, but to match the convention used by axiom
-    # (monthly_allotment × 12) we explicitly multiply.
-    snap_monthly_arr, spm_weights = _values(sim, "snap", f"{year}-01")
-    state_per_spm_arr, _ = _values(sim, "state_code_str", year)  # entity-mapped to SPM
+    snap_per_hh = sim.calculate("snap", period=f"{year}-01", map_to="household")
+    state_per_hh = sim.calculate("state_code_str", period=year)
     print(f"[PE]   computed in {time.time() - t0:.1f}s", flush=True)
 
-    in_co = state_per_spm_arr == "CO"
-    annual_cost = float((snap_monthly_arr[in_co] * spm_weights[in_co]).sum() * 12)
-    weighted_units = float(spm_weights[in_co].sum())
-    weighted_recipients = float(spm_weights[in_co][snap_monthly_arr[in_co] > 0].sum())
+    snap_arr = snap_per_hh.values
+    hh_weights = snap_per_hh.weights
+    state_arr = state_per_hh.values
+
+    in_co = state_arr == "CO"
+    annual_cost = float((snap_arr[in_co] * hh_weights[in_co]).sum() * 12)
+    weighted_units = float(hh_weights[in_co].sum())
+    weighted_recipients = float(hh_weights[in_co][snap_arr[in_co] > 0].sum())
 
     return {
         "scope": "CO",
@@ -114,7 +120,7 @@ def compute_pe_co_snap(sim, year: int) -> dict:
         "pe_variable": "snap (monthly × 12)",
         **AXIOM_CO_SNAP_2026,
         "pe_total_annual_cost": annual_cost,
-        "pe_weighted_spm_units": weighted_units,
+        "pe_weighted_co_households": weighted_units,
         "pe_weighted_recipients": weighted_recipients,
     }
 

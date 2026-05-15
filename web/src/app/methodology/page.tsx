@@ -1,3 +1,4 @@
+import { MethodologyEcpsPanel } from "@/components/MethodologyEcpsPanel";
 import { MethodologyPeSection } from "@/components/MethodologyPeSection";
 import { ALL_PROGRAMS, type ProgramMethodology } from "@/lib/methodology";
 
@@ -44,6 +45,10 @@ export default function MethodologyPage() {
       {ALL_PROGRAMS.map((p) => (
         <ProgramSection key={p.id} program={p} />
       ))}
+
+      <Section eyebrow="ecps-source" title="ECPS source data — what we actually read">
+        <MethodologyEcpsPanel />
+      </Section>
 
       <Section eyebrow="comparison" title="Side-by-side with PolicyEngine">
         <MethodologyPeSection />

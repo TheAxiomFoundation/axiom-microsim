@@ -49,17 +49,35 @@ STD_DEDUCTION_2026 = {
 ADULT_AGE = 18
 
 INCOME_COLUMNS: tuple[str, ...] = (
+    # Earned
     "employment_income_before_lsr",
     "self_employment_income_before_lsr",
+    "tip_income",
+    # Investment
     "taxable_interest_income",
     "qualified_dividend_income",
     "non_qualified_dividend_income",
+    # Capital gains (LTCG & QDI also re-routed to §1(h) for preferential rates)
+    "long_term_capital_gains_before_response",
+    "short_term_capital_gains",
+    "long_term_capital_gains_on_collectibles",
+    "non_sch_d_capital_gains",
+    # Retirement
     "taxable_pension_income",
+    "taxable_ira_distributions",
+    "taxable_401k_distributions",
+    # Other
     "rental_income",
+    "farm_income",
+    "estate_income",
     "alimony_income",
-    "tip_income",
+    "taxable_unemployment_compensation",
+    "social_security",
     "miscellaneous_income",
 )
+
+# 85% of Social Security benefits taxable in our v1 (rough §86 proxy).
+SS_TAXABLE_FRACTION = 0.85
 
 
 @dataclass
@@ -107,17 +125,30 @@ def project(batch: TaxUnitBatch, *, period_year: int = 2026) -> FedIncomeTaxProj
 
     taxable_income = np.maximum(0.0, agi - std_ded)
 
+    # §1(h) inputs — pipe real ECPS values so preferential-rate carve-out
+    # in §1(j) actually engages on long-term gains and qualified dividends.
+    def _sum_to_tu(col: str) -> np.ndarray:
+        if col in batch.person_columns:
+            return sum_person_to_tax_unit(
+                batch.person_columns[col], batch.person_tax_unit_index, n_tu
+            )
+        return np.zeros(n_tu, dtype=np.float64)
+
+    ltcg = _sum_to_tu("long_term_capital_gains_before_response")
+    stcg = _sum_to_tu("short_term_capital_gains")
+    collectibles = _sum_to_tu("long_term_capital_gains_on_collectibles")
+    qdi = _sum_to_tu("qualified_dividend_income")
+
     inputs: dict[str, np.ndarray] = {
-        # §1(j) input
         "us:statutes/26/1/j#input.taxable_income": taxable_income.round().astype(np.int64),
-        # Brackets policy input
         "us:policies/irs/rev-proc-2025-32/income-tax-brackets#input.filing_status": filing_status,
-        # §1(h) inputs — zeroed for v1 (capital-gains slice not yet projected)
-        "us:statutes/26/1/h#input.long_term_capital_gains": np.zeros(n_tu, dtype=np.int64),
-        "us:statutes/26/1/h#input.short_term_capital_gains": np.zeros(n_tu, dtype=np.int64),
-        "us:statutes/26/1/h#input.qualified_dividend_income": np.zeros(n_tu, dtype=np.int64),
+        "us:statutes/26/1/h#input.long_term_capital_gains": ltcg.round().astype(np.int64),
+        "us:statutes/26/1/h#input.short_term_capital_gains": stcg.round().astype(np.int64),
+        "us:statutes/26/1/h#input.qualified_dividend_income": qdi.round().astype(np.int64),
+        # §1250 unrecaptured gain not separable in ECPS — leave at 0.
         "us:statutes/26/1/h#input.unrecaptured_section_1250_gain": np.zeros(n_tu, dtype=np.int64),
-        "us:statutes/26/1/h#input.capital_gains_28_percent_rate_gain": np.zeros(n_tu, dtype=np.int64),
+        # Collectibles → 28% rate gain bucket.
+        "us:statutes/26/1/h#input.capital_gains_28_percent_rate_gain": collectibles.round().astype(np.int64),
     }
 
     return FedIncomeTaxProjection(

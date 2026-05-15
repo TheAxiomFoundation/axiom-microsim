@@ -76,17 +76,32 @@ DEFAULT_PERSON_COLUMNS: tuple[str, ...] = (
     "age",
     "is_disabled",
     "is_blind",
+    # Earned income
     "employment_income_before_lsr",
     "self_employment_income_before_lsr",
+    "tip_income",
+    # Investment income
     "taxable_interest_income",
     "tax_exempt_interest_income",
     "qualified_dividend_income",
     "non_qualified_dividend_income",
+    # Capital gains (long-term gets preferential §1(h) rates; short-term at ordinary)
+    "long_term_capital_gains_before_response",
+    "short_term_capital_gains",
+    "long_term_capital_gains_on_collectibles",
+    "non_sch_d_capital_gains",
+    # Retirement
     "taxable_pension_income",
     "tax_exempt_pension_income",
+    "taxable_ira_distributions",
+    "taxable_401k_distributions",
+    "social_security",
+    # Other
     "rental_income",
+    "farm_income",
+    "estate_income",
     "alimony_income",
-    "tip_income",
+    "taxable_unemployment_compensation",
     "miscellaneous_income",
     # Logically household-level but stored per-person in ECPS. Folded by
     # the projection layer.

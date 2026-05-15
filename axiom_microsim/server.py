@@ -123,6 +123,92 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+# --- /ecps-stats ------------------------------------------------------------
+# Verifiable mapping: for a given program/state, return the weighted
+# aggregates of each ECPS column we read. Lets the methodology page show
+# "we read $X of qualified dividends and project Y per tax unit" so the
+# slot mapping is checkable.
+
+class EcpsColumnStat(BaseModel):
+    name: str
+    level: str                  # "person" | "household"
+    weighted_total: float       # weight × value summed
+    weighted_mean: float        # weighted_total / weighted_units
+    nonzero_share: float        # weighted share of units with value > 0
+    sample_size: int
+
+
+class EcpsStatsResponse(BaseModel):
+    program: str
+    state: str
+    n_persons_sample: int
+    n_units_sample: int
+    units_label: str            # "tax units" | "households"
+    weighted_units: float
+    columns: list[EcpsColumnStat]
+
+
+@app.get("/ecps-stats", response_model=EcpsStatsResponse)
+def ecps_stats(
+    program: Literal["co-snap", "federal-income-tax", "federal-ctc"],
+    state: str = "US",
+) -> EcpsStatsResponse:
+    if program == "co-snap":
+        from .data.ecps_loader import load_state as _load
+        batch = _load(state)
+        units_label = "households"
+        n_units = batch.n_households
+        weights = batch.household_weight
+        person_idx = batch.person_household_index
+    else:
+        from .data.ecps_loader import load_state_tax_units as _load_tu
+        batch = _load_tu(state)
+        units_label = "tax units"
+        n_units = batch.n_tax_units
+        weights = batch.tax_unit_weight
+        person_idx = batch.person_tax_unit_index
+
+    # Per-person weight derived from the unit weight via membership.
+    person_weight = weights[person_idx]
+
+    cols: list[EcpsColumnStat] = []
+    for name, arr in batch.person_columns.items():
+        # Skip categorical / boolean fields with no $ semantics.
+        if arr.dtype == bool:
+            continue
+        if name in {"age"}:
+            continue
+        v = arr.astype(np.float64)
+        weighted_total = float((v * person_weight).sum())
+        weighted_mean = (
+            weighted_total / float(weights.sum()) if weights.sum() else 0.0
+        )
+        nonzero_share = (
+            float(person_weight[v > 0].sum() / person_weight.sum())
+            if person_weight.sum() else 0.0
+        )
+        cols.append(EcpsColumnStat(
+            name=name,
+            level="person",
+            weighted_total=weighted_total,
+            weighted_mean=weighted_mean,
+            nonzero_share=nonzero_share,
+            sample_size=int(arr.size),
+        ))
+    # Sort by weighted_total descending so the biggest sources lead.
+    cols.sort(key=lambda c: -c.weighted_total)
+
+    return EcpsStatsResponse(
+        program=program,
+        state=state,
+        n_persons_sample=batch.n_persons,
+        n_units_sample=n_units,
+        units_label=units_label,
+        weighted_units=float(weights.sum()),
+        columns=cols,
+    )
+
+
 # --- /compare ---------------------------------------------------------------
 # Run PE on the same scope as Axiom and return its aggregate. PE lives in
 # its own venv (~/policyengine.py/.venv) so we subprocess into it. Slow

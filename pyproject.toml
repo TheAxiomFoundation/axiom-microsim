@@ -12,6 +12,7 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "pydantic>=2.6",
+    "orjson>=3.10",
     # axiom-rules-engine is installed separately from the local checkout
     # (or via `pip install /path/to/axiom-rules-engine/python` in CI).
     # Not pinned here so this package can be built without that path.

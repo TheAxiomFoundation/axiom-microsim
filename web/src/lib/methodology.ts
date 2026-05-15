@@ -53,57 +53,58 @@ export const FEDERAL_INCOME_TAX: ProgramMethodology = {
     {
       axiomSlot: "us:statutes/26/1/j#input.taxable_income",
       axiomEntity: "TaxUnit",
-      ecpsColumn: "(computed)",
+      ecpsColumn: "(AGI proxy − std deduction)",
       derivation:
-        "max(0, AGI_proxy − standard_deduction_for_filing_status) where AGI_proxy = sum of person-level income components per tax unit.",
+        "max(0, AGI_proxy − std_deduction). AGI_proxy = Σ over persons in TU of: employment_income_before_lsr + self_employment_income_before_lsr + tip_income + taxable_interest_income + qualified_dividend_income + non_qualified_dividend_income + long_term_capital_gains_before_response + short_term_capital_gains + long_term_capital_gains_on_collectibles + non_sch_d_capital_gains + taxable_pension_income + taxable_ira_distributions + taxable_401k_distributions + rental_income + farm_income + estate_income + alimony_income + taxable_unemployment_compensation + social_security + miscellaneous_income.",
     },
     {
       axiomSlot:
         "us:policies/irs/rev-proc-2025-32/income-tax-brackets#input.filing_status",
       axiomEntity: "TaxUnit",
-      ecpsColumn: "(heuristic)",
+      ecpsColumn: "(heuristic over age + tax_unit grouping)",
       derivation:
-        "0 single / 1 joint / 3 HoH. Heuristic: 2+ adults in tax unit → joint; 1 adult + dependent(s) → HoH; otherwise single.",
+        "0 single / 1 joint / 3 HoH. Heuristic: 2+ adults in tax unit → joint; 1 adult + dependent(s) → HoH; otherwise single. ECPS does not store PE-derived filing status.",
     },
     {
       axiomSlot: "us:statutes/26/1/h#input.long_term_capital_gains",
       axiomEntity: "TaxUnit",
-      ecpsColumn: null,
-      derivation: "Zeroed in v1.",
+      ecpsColumn: "long_term_capital_gains_before_response",
+      derivation: "Σ person-level LTCG within the tax unit.",
     },
     {
       axiomSlot: "us:statutes/26/1/h#input.short_term_capital_gains",
       axiomEntity: "TaxUnit",
-      ecpsColumn: null,
-      derivation: "Zeroed in v1.",
+      ecpsColumn: "short_term_capital_gains",
+      derivation: "Σ person-level STCG within the tax unit. Can be negative (net losses).",
     },
     {
       axiomSlot: "us:statutes/26/1/h#input.qualified_dividend_income",
       axiomEntity: "TaxUnit",
-      ecpsColumn: null,
+      ecpsColumn: "qualified_dividend_income",
       derivation:
-        "Zeroed in §1(h) v1 (we still include it in the AGI proxy at ordinary rates above).",
+        "Σ person-level QDI within the tax unit. Also included in AGI proxy above; §1(h) carves it out for preferential rates inside §1(j).",
+    },
+    {
+      axiomSlot: "us:statutes/26/1/h#input.capital_gains_28_percent_rate_gain",
+      axiomEntity: "TaxUnit",
+      ecpsColumn: "long_term_capital_gains_on_collectibles",
+      derivation: "Σ person-level collectibles LTCG. Taxed at the 28% rate under §1(h)(4).",
     },
     {
       axiomSlot: "us:statutes/26/1/h#input.unrecaptured_section_1250_gain",
       axiomEntity: "TaxUnit",
       ecpsColumn: null,
-      derivation: "Zeroed in v1.",
-    },
-    {
-      axiomSlot: "us:statutes/26/1/h#input.capital_gains_28_percent_rate_gain",
-      axiomEntity: "TaxUnit",
-      ecpsColumn: null,
-      derivation: "Zeroed in v1.",
+      derivation:
+        "Zeroed: ECPS does not separate §1250 unrecaptured gain from other long-term gains.",
     },
   ],
   calculations: [
     {
       name: "AGI_proxy",
       formula:
-        "Σ over persons in tax unit of: employment_income_before_lsr + self_employment_income_before_lsr + taxable_interest_income + qualified_dividend_income + non_qualified_dividend_income + taxable_pension_income + rental_income + alimony_income + tip_income + miscellaneous_income",
+        "Σ over persons in tax unit of: employment_income_before_lsr + self_employment_income_before_lsr + tip_income + taxable_interest_income + qualified_dividend_income + non_qualified_dividend_income + long_term_capital_gains_before_response + short_term_capital_gains + long_term_capital_gains_on_collectibles + non_sch_d_capital_gains + taxable_pension_income + taxable_ira_distributions + taxable_401k_distributions + rental_income + farm_income + estate_income + alimony_income + taxable_unemployment_compensation + social_security + miscellaneous_income",
       note:
-        "ECPS reports these per person. We sum to TaxUnit. Above-the-line deductions (§62 — half-SECA, QBI, tips, overtime, etc.) are NOT subtracted in v1.",
+        "ECPS reports these per person; we sum to TaxUnit. Social Security is included at 100% in the AGI proxy as a coarse stand-in for the §86 0/50/85% rule (which needs MAGI thresholds we don't yet compute). Above-the-line deductions (§62 — half-SECA, QBI, tips, overtime, charitable, medical, etc.) are NOT subtracted in v1.",
     },
     {
       name: "standard_deduction (Rev Proc 2025-32, tax year 2026)",
@@ -127,10 +128,16 @@ export const FEDERAL_INCOME_TAX: ProgramMethodology = {
   ],
   limitations: [
     {
-      item: "Capital gains (§1(h) preferential rates)",
+      item: "§1250 unrecaptured gain not separated",
       impact:
-        "Top deciles understated because long-term gains are taxed at ordinary rates above (since we feed them into AGI) but the §1(h) preferential schedule is bypassed.",
-      rulesusStatus: "§1(h) encoded; we just don't pipe inputs.",
+        "All long-term capital gains taxed under the standard §1(h) preferential schedule (0/15/20%); §1250 unrecaptured gain (which would face the 25% rate) folded in at the lower rate. Tiny effect in aggregate.",
+      rulesusStatus: "§1(h) encoded with the 25% rate; ECPS gap.",
+    },
+    {
+      item: "Social Security taxability (§86)",
+      impact:
+        "We add 100% of SS benefits to AGI as a coarse proxy. The actual §86 rule applies 0/50/85% based on MAGI thresholds, so we slightly OVERSTATE AGI for low-income retirees.",
+      rulesusStatus: "§86 encoded; we don't yet pipe MAGI inputs to §86.",
     },
     {
       item: "Above-the-line deductions (§62, §164(f), §199A, §170(p), §213, §224, §225)",

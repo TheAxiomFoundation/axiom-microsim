@@ -9,23 +9,31 @@ interface StatCardProps {
 
 export function StatCard({ label, value, hint, delta }: StatCardProps) {
   return (
-    <div className="rounded-lg border border-stone-200 bg-white p-4">
-      <div className="text-xs uppercase tracking-wide text-stone-500">{label}</div>
-      <div className="mt-1 text-2xl font-semibold text-stone-900">{value}</div>
+    <div className="rounded-md border border-rule bg-paper-elev p-4">
+      <div className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
+        {label}
+      </div>
+      <div className="mt-2 font-serif text-[1.7rem] leading-none tracking-tight text-ink">
+        {value}
+      </div>
       {delta && (
         <div
-          className={`mt-1 text-sm ${
+          className={`mt-2 font-mono text-xs ${
             delta.positive === null
-              ? "text-stone-500"
+              ? "text-ink-muted"
               : delta.positive
-                ? "text-emerald-600"
-                : "text-rose-600"
+                ? "text-success"
+                : "text-error"
           }`}
         >
           {delta.value}
         </div>
       )}
-      {hint && <div className="mt-1 text-xs text-stone-500">{hint}</div>}
+      {hint && (
+        <div className="mt-2 font-mono text-[0.7rem] uppercase tracking-eyebrow text-ink-muted">
+          {hint}
+        </div>
+      )}
     </div>
   );
 }

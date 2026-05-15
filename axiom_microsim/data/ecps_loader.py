@@ -96,6 +96,24 @@ DEFAULT_PERSON_COLUMNS: tuple[str, ...] = (
 DEFAULT_HOUSEHOLD_COLUMNS: tuple[str, ...] = ()
 
 
+@dataclass
+class TaxUnitBatch:
+    """ECPS slice grouped by tax unit instead of household.
+
+    Tax-unit weight is inherited from the household the tax unit belongs
+    to (PE convention: every tax unit in a household has the household's
+    weight).
+    """
+
+    state: str
+    year: str
+    n_persons: int
+    n_tax_units: int
+    person_tax_unit_index: np.ndarray   # int64 (n_persons,)
+    tax_unit_weight: np.ndarray         # float64 (n_tax_units,)
+    person_columns: dict[str, np.ndarray] = field(default_factory=dict)
+
+
 def load_state(
     state: str,
     *,
@@ -166,6 +184,103 @@ def load_state(
         person_columns=person_data,
         household_columns=household_data,
     )
+
+
+def load_state_tax_units(
+    state: str,
+    *,
+    path: Path | str | None = None,
+    year: str = DEFAULT_YEAR,
+    person_columns: Iterable[str] = DEFAULT_PERSON_COLUMNS,
+) -> TaxUnitBatch:
+    """Read tax units for ``state`` (or ``"US"`` for nationwide).
+
+    A tax unit is a tax-filing entity (single filer, MFJ couple, MFS
+    spouse, HoH parent, etc.). One household can contain several tax
+    units (e.g. unmarried partners filing separately, an adult child).
+    Tax-unit weight inherits from the parent household.
+
+    Pass ``state="US"`` to skip state filtering and load all 30k tax
+    units in the file — useful for federal-tax microsimulation.
+    """
+    state = state.upper()
+    nationwide = state in {"US", "ALL", "NATIONAL"}
+    if not nationwide and state not in STATE_FIPS:
+        raise ValueError(f"unknown state code: {state!r}")
+    fips = None if nationwide else STATE_FIPS[state]
+
+    h5_path = Path(path) if path else DEFAULT_ECPS_PATH
+    if not h5_path.exists():
+        raise FileNotFoundError(f"Enhanced CPS file not found at {h5_path}")
+
+    with h5py.File(h5_path, "r") as f:
+        household_ids = _read(f, "household_id", year)
+        household_state_fips = _read(f, "state_fips", year)
+        household_weight_all = _read(f, "household_weight", year)
+        person_household_id = _read(f, "person_household_id", year)
+        tax_unit_ids = _read(f, "tax_unit_id", year)
+        person_tax_unit_id = _read(f, "person_tax_unit_id", year)
+
+        # Filter households by state, then keep only those persons
+        # (and the tax units they belong to). For nationwide, keep all.
+        if fips is None:
+            hh_mask = np.ones(household_ids.shape, dtype=bool)
+        else:
+            hh_mask = household_state_fips == fips
+        kept_hh_ids = household_ids[hh_mask]
+        max_hh_id = int(max(kept_hh_ids.max(), person_household_id.max())) + 1
+        hh_id_to_pos = np.full(max_hh_id, -1, dtype=np.int64)
+        hh_id_to_pos[kept_hh_ids] = np.arange(int(hh_mask.sum()))
+
+        person_pos = np.where(hh_id_to_pos[person_household_id] >= 0)[0]
+        n_persons = person_pos.size
+
+        # Per-person household weight, then per-person tax-unit id.
+        weights_by_household = household_weight_all[hh_mask].astype(np.float64)
+        person_hh_pos = hh_id_to_pos[person_household_id[person_pos]]
+        person_weight = weights_by_household[person_hh_pos]
+        kept_person_tu_ids = person_tax_unit_id[person_pos]
+
+        # Build tax-unit index over kept persons.
+        unique_tu_ids = np.unique(kept_person_tu_ids)
+        n_tax_units = unique_tu_ids.size
+        max_tu_id = int(unique_tu_ids.max()) + 1
+        tu_id_to_pos = np.full(max_tu_id, -1, dtype=np.int64)
+        tu_id_to_pos[unique_tu_ids] = np.arange(n_tax_units)
+        person_tu_index = tu_id_to_pos[kept_person_tu_ids].astype(np.int64)
+
+        # Tax-unit weight: every person in a tax unit has the same hh
+        # weight (PE invariant). Take the first person's weight per TU
+        # via index_of_first.
+        order = np.argsort(person_tu_index, kind="stable")
+        sorted_tu = person_tu_index[order]
+        first_in_tu = np.concatenate(([True], sorted_tu[1:] != sorted_tu[:-1]))
+        tu_first_person = order[first_in_tu]
+        tax_unit_weight = person_weight[tu_first_person]
+
+        person_data: dict[str, np.ndarray] = {}
+        for name in person_columns:
+            person_data[name] = _read(f, name, year)[person_pos]
+
+    return TaxUnitBatch(
+        state=state,
+        year=year,
+        n_persons=n_persons,
+        n_tax_units=n_tax_units,
+        person_tax_unit_index=person_tu_index,
+        tax_unit_weight=tax_unit_weight,
+        person_columns=person_data,
+    )
+
+
+def sum_person_to_tax_unit(
+    person_values: np.ndarray, person_tax_unit_index: np.ndarray, n_tax_units: int
+) -> np.ndarray:
+    return np.bincount(person_tax_unit_index, weights=person_values, minlength=n_tax_units)
+
+
+def count_persons_per_tax_unit(person_tax_unit_index: np.ndarray) -> np.ndarray:
+    return np.bincount(person_tax_unit_index)
 
 
 def _read(f: h5py.File, var: str, year: str) -> np.ndarray:

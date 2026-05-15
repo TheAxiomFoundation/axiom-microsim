@@ -3,5 +3,63 @@
 @tailwind utilities;
 
 :root {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-sans: var(--font-sans, ui-sans-serif), system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --f-serif: var(--font-serif, ui-serif), "Newsreader", Georgia, serif;
+  --f-mono: var(--font-mono, ui-monospace), "JetBrains Mono", SFMono-Regular,
+    Menlo, Consolas, monospace;
+}
+
+html,
+body {
+  background-color: #faf9f6;
+  color: #1c1917;
+}
+
+body {
+  font-family: var(--f-sans);
+  font-feature-settings: "ss01", "cv11";
+}
+
+/* Inputs / buttons land focus rings on the brand amber. */
+*:focus-visible {
+  outline: 2px solid #92400e;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Range slider — visually consistent with the rest of the surface. */
+input[type="range"] {
+  -webkit-appearance: none;
+  height: 4px;
+  background: #e7e5e4;
+  border-radius: 2px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #92400e;
+  border: 2px solid #faf9f6;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px #92400e;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #92400e;
+  border: 2px solid #faf9f6;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px #92400e;
+}
+
+/* Editorial body utility — used for the paragraph under the H1. */
+.editorial {
+  font-family: var(--f-serif);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  color: #57534e;
 }

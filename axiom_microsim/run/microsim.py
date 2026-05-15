@@ -26,8 +26,12 @@ from typing import Literal
 import numpy as np
 from ruamel.yaml import YAML
 
-from ..data.ecps_loader import EcpsBatch
+from ..data.ecps_loader import EcpsBatch, TaxUnitBatch
 from ..project.co_snap import CoSnapProjection, project as project_co_snap
+from ..project.federal_income_tax import (
+    FedIncomeTaxProjection,
+    project as project_federal_income_tax,
+)
 
 
 # --- Locations ---------------------------------------------------------------
@@ -51,6 +55,12 @@ CO_SNAP_BASELINE_ARTIFACT = ARTIFACTS_DIR / "co-snap.compiled.json"
 # every input filled — there's no implicit "use the compiled default."
 CO_SNAP_BASE_SCHEMA = ARTIFACTS_DIR / "co-snap-base.json"
 
+# §1(j) federal income tax — top-level program YAML. Compiles the §1(j)
+# brackets logic together with §1(h) capital-gains imports and the
+# rev-proc bracket parameters. Has no synthetic-program slug — we use
+# the natural module IDs.
+FED_INCOME_TAX_PROGRAM_REL = "statutes/26/1/j.yaml"
+
 CO_SNAP_RELATION_NAME = "us:statutes/7/2012/j#relation.member_of_household"
 
 # CO SNAP's compiled artifact carries schema name "co-snap.fy-2026" and
@@ -61,6 +71,16 @@ CO_SNAP_INPUT_PREFIX = "axiom:co-snap-fy-2026#input."
 
 def _input_id(slot: str) -> str:
     return CO_SNAP_INPUT_PREFIX + slot
+
+
+# §1(j) outputs — TaxUnit-rooted, period=Year. The engine echoes the
+# absolute id back as the dict key; we reverse-map to a friendly name.
+FED_INCOME_TAX_OUTPUT_IDS: dict[str, str] = {
+    "income_tax_main_rates": "us:statutes/26/1/j#income_tax_main_rates",
+    "regular_tax_before_credits": "us:statutes/26/1/j#regular_tax_before_credits",
+    "ordinary_taxable_income": "us:statutes/26/1/j#ordinary_taxable_income",
+}
+FED_INCOME_TAX_DEFAULT_OUTPUTS: tuple[str, ...] = tuple(FED_INCOME_TAX_OUTPUT_IDS)
 
 
 # --- Reform overrides --------------------------------------------------------
@@ -138,6 +158,34 @@ def run_co_snap(
     )
 
 
+def run_federal_income_tax(
+    batch: TaxUnitBatch,
+    *,
+    period_year: int = 2026,
+    overrides: list[ParameterOverride] | None = None,
+    outputs: tuple[str, ...] = FED_INCOME_TAX_DEFAULT_OUTPUTS,
+) -> "MicrosimResult":
+    """Run §1(j) federal income tax over an ECPS tax-unit batch."""
+    projection = project_federal_income_tax(batch, period_year=period_year)
+    artifact_path, scratch = _fed_artifact_for(overrides)
+    try:
+        out = _execute_fed_income_tax(projection, artifact_path, period_year, outputs)
+    finally:
+        if scratch is not None:
+            shutil.rmtree(scratch, ignore_errors=True)
+            artifact_path.unlink(missing_ok=True)
+
+    return MicrosimResult(
+        program="federal-income-tax",
+        state=batch.state,
+        period_year=period_year,
+        n_households=projection.n_tax_units,   # treat tax_units as the row entity
+        n_persons=batch.n_persons,
+        household_weight=batch.tax_unit_weight,
+        outputs=out,
+    )
+
+
 # --- Schema (input slots + defaults) ----------------------------------------
 
 @dataclass
@@ -197,6 +245,95 @@ def _artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path
     out = ARTIFACTS_DIR / f".tmp-{scratch.name}.compiled.json"
     _compile(dst_us_co / CO_SNAP_PROGRAM_REL, out)
     return out, scratch
+
+
+def _fed_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path | None]:
+    """Compile §1(j) (with optional reform overrides) and return artifact path."""
+    program_path = RULES_US_DIR / FED_INCOME_TAX_PROGRAM_REL
+    if not overrides:
+        baseline = ARTIFACTS_DIR / "federal-income-tax.compiled.json"
+        if not baseline.exists():
+            ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+            _compile(program_path, baseline)
+        return baseline, None
+
+    # Reform: copy the rules-us tree, patch, recompile.
+    if not RULES_US_DIR.exists():
+        raise FileNotFoundError(f"rules-us missing at {RULES_US_DIR}")
+    scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-fed-"))
+    dst = scratch / "rules-us"
+    shutil.copytree(RULES_US_DIR, dst, symlinks=False)
+    for ov in overrides:
+        if ov.repo != "rules-us":
+            raise ValueError(
+                f"federal-income-tax reform overrides must target rules-us, got {ov.repo}"
+            )
+        _patch_yaml(dst / ov.file_relative, ov)
+
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    out = ARTIFACTS_DIR / f".tmp-{scratch.name}.compiled.json"
+    _compile(dst / FED_INCOME_TAX_PROGRAM_REL, out)
+    return out, scratch
+
+
+def _execute_fed_income_tax(
+    projection: FedIncomeTaxProjection,
+    artifact_path: Path,
+    period_year: int,
+    output_names: tuple[str, ...],
+) -> dict[str, np.ndarray]:
+    """Build a CompiledExecutionRequest for §1(j) and run it."""
+    interval = {"start": f"{period_year}-01-01", "end": f"{period_year}-12-31"}
+    period = {"period_kind": "tax_year", "start": interval["start"], "end": interval["end"]}
+
+    output_ids = [FED_INCOME_TAX_OUTPUT_IDS[n] for n in output_names]
+
+    inputs: list[dict] = []
+    queries: list[dict] = []
+    for tu_idx in range(projection.n_tax_units):
+        tu_id = f"tu{tu_idx}"
+        for full_input_id, column in projection.inputs.items():
+            inputs.append({
+                "name": full_input_id,
+                "entity": "TaxUnit",
+                "entity_id": tu_id,
+                "interval": interval,
+                "value": _scalar_value(column[tu_idx]),
+            })
+        queries.append({"entity_id": tu_id, "period": period, "outputs": output_ids})
+
+    request = {
+        "mode": "fast",
+        "dataset": {"inputs": inputs, "relations": []},
+        "queries": queries,
+    }
+
+    proc = subprocess.run(
+        [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
+        input=json.dumps(request), text=True, capture_output=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"engine failed:\n{proc.stderr.strip()[:1500]}")
+    response = json.loads(proc.stdout)
+
+    id_to_name = {v: k for k, v in FED_INCOME_TAX_OUTPUT_IDS.items()}
+    arrays = {n: np.zeros(projection.n_tax_units, dtype=np.float64) for n in output_names}
+    for qr in response["results"]:
+        eid = qr["entity_id"]
+        if not eid.startswith("tu"):
+            continue
+        idx = int(eid[2:])
+        for key, out in qr["outputs"].items():
+            name = id_to_name.get(key, key)
+            if name not in arrays:
+                continue
+            if out["kind"] == "scalar":
+                v = out["value"]
+                if v["kind"] in ("decimal", "integer"):
+                    arrays[name][idx] = float(v["value"])
+                elif v["kind"] == "bool":
+                    arrays[name][idx] = 1.0 if v["value"] else 0.0
+    return arrays
 
 
 def _compile(program_yaml: Path, output_json: Path) -> None:
@@ -381,7 +518,15 @@ def _patch_yaml(path: Path, override: ParameterOverride) -> None:
         if "values" not in version:
             raise ValueError(f"{override.parameter} has no values to scale")
         for k in version["values"]:
-            version["values"][k] = round(version["values"][k] * (override.multiplier or 1.0))
+            scaled = version["values"][k] * (override.multiplier or 1.0)
+            # Preserve rate-style decimals, round money-style integers.
+            # Heuristic: if the original was an int and the scale stays
+            # whole-cent-ish, round to int; otherwise keep float precision.
+            original = version["values"][k]
+            if isinstance(original, int) and abs(scaled - round(scaled)) < 0.5:
+                version["values"][k] = round(scaled)
+            else:
+                version["values"][k] = round(scaled, 6)
     elif override.patch_kind == "set_values":
         version.setdefault("values", {})
         for k, v in (override.values or {}).items():

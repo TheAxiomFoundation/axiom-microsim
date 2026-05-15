@@ -502,22 +502,6 @@ export default function Page() {
               }
             />
 
-            <Card
-              title={`Per-${programId === "co-snap" ? "household" : "tax-unit"} impact`}
-              subtitle="Weighted shares; per-unit average gain or loss against baseline."
-            >
-              {reform.data?.reform ? (
-                <WinnersLosers
-                  reform={reform.data.reform}
-                  winnersLabel={program.winners_label}
-                  losersLabel={program.losers_label}
-                  unitLabel={programId === "co-snap" ? "households" : "tax units"}
-                />
-              ) : (
-                <div className="py-2 text-sm text-ink-muted">computing…</div>
-              )}
-            </Card>
-
             {reform.data?.reform?.decile_impact && reform.data.reform.decile_impact.length > 0 && (
               <Card
                 title="Mean change by income decile"
@@ -536,6 +520,26 @@ export default function Page() {
                 />
               </Card>
             )}
+
+            <Card
+              title="Winners and losers"
+              subtitle={
+                programId === "co-snap"
+                  ? "Households whose monthly benefit goes up vs down under the reform."
+                  : "Tax units whose liability or credit changes under the reform."
+              }
+            >
+              {reform.data?.reform ? (
+                <WinnersLosers
+                  reform={reform.data.reform}
+                  winnersLabel={program.winners_label}
+                  losersLabel={program.losers_label}
+                  unitLabel={programId === "co-snap" ? "households" : "tax units"}
+                />
+              ) : (
+                <div className="py-2 text-sm text-ink-muted">computing…</div>
+              )}
+            </Card>
 
             {/* PE comparison for the reform — only if any applied lever
                 has a PE translation. */}

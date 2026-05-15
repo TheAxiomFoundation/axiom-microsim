@@ -84,16 +84,27 @@ class BaselineOut(BaseModel):
     decile_distribution: list[DecileBinOut]
 
 
+class DecileImpactBin(BaseModel):
+    decile: int                       # 1..10
+    income_floor: float                # AGI / gross-income lower edge
+    income_ceiling: float              # upper edge
+    households_weighted: float
+    mean_delta: float                  # mean per-unit change vs baseline
+    share_winners: float               # weighted share with delta > 0
+    share_losers: float                # weighted share with delta < 0
+
+
 class ReformOut(BaseModel):
     baseline_annual_cost: float
     reform_annual_cost: float
     delta_annual_cost: float
-    households_winners: float          # SNAP: gain in benefit. Tax: pay LESS tax.
-    households_losers: float           # SNAP: loss in benefit. Tax: pay MORE tax.
+    households_winners: float
+    households_losers: float
     households_unchanged: float
     households_total_weighted: float
     average_winner_gain_monthly: float
     average_loser_loss_monthly: float
+    decile_impact: list[DecileImpactBin] = Field(default_factory=list)
 
 
 class MicrosimResponse(BaseModel):
@@ -336,7 +347,26 @@ def _run_co_snap(req: MicrosimRequest, overrides: list[ParameterOverride]) -> Mi
     if overrides:
         reform = run_co_snap(batch, period_year=req.year, overrides=overrides)
         impact = compare_reform(baseline, reform)
-        response.reform = ReformOut(**impact.__dict__)
+        # Decile of household gross income → mean monthly delta per hh.
+        from .data.ecps_loader import sum_person_to_household
+        income_columns_hh = (
+            "employment_income_before_lsr", "self_employment_income_before_lsr",
+            "taxable_interest_income", "qualified_dividend_income",
+            "non_qualified_dividend_income", "taxable_pension_income",
+            "rental_income", "alimony_income",
+        )
+        agi_hh = np.zeros(batch.n_households, dtype=np.float64)
+        for col in income_columns_hh:
+            if col in batch.person_columns:
+                agi_hh += sum_person_to_household(
+                    batch.person_columns[col], batch.person_household_index, batch.n_households,
+                )
+        delta = (
+            np.asarray(reform.outputs["snap_allotment"], dtype=np.float64)
+            - np.asarray(baseline.outputs["snap_allotment"], dtype=np.float64)
+        )
+        decile_bins = _decile_impact(delta, batch.household_weight, agi_hh)
+        response.reform = ReformOut(**impact.__dict__, decile_impact=decile_bins)
 
     return response
 
@@ -401,6 +431,11 @@ def _run_federal_income_tax(
         avg_gain = float((-delta[gainers] * weight[gainers]).sum() / win_w) if win_w else 0.0
         avg_loss = float((delta[loswers] * weight[loswers]).sum() / lose_w) if lose_w else 0.0
 
+        # For tax: gainers receive a tax CUT — their delta is negative
+        # but they're winners. Negate so mean_delta is the "received less
+        # tax" magnitude when negative; the chart can color positive/
+        # negative however it likes.
+        decile_bins = _decile_impact(delta, weight, _tax_unit_agi(batch))
         response.reform = ReformOut(
             baseline_annual_cost=annual_revenue,
             reform_annual_cost=ref_revenue,
@@ -411,6 +446,7 @@ def _run_federal_income_tax(
             households_total_weighted=float(weight.sum()),
             average_winner_gain_monthly=avg_gain,
             average_loser_loss_monthly=avg_loss,
+            decile_impact=decile_bins,
         )
 
     return response
@@ -470,6 +506,7 @@ def _run_federal_ctc(req: MicrosimRequest, overrides: list[ParameterOverride]) -
         avg_gain = float((delta[gainers] * weight[gainers]).sum() / win_w) if win_w else 0.0
         avg_loss = float((-delta[losers] * weight[losers]).sum() / lose_w) if lose_w else 0.0
 
+        decile_bins = _decile_impact(delta, weight, _tax_unit_agi(batch))
         response.reform = ReformOut(
             baseline_annual_cost=annual_cost,
             reform_annual_cost=ref_cost,
@@ -480,6 +517,7 @@ def _run_federal_ctc(req: MicrosimRequest, overrides: list[ParameterOverride]) -
             households_total_weighted=float(weight.sum()),
             average_winner_gain_monthly=avg_gain,
             average_loser_loss_monthly=avg_loss,
+            decile_impact=decile_bins,
         )
 
     return response
@@ -497,6 +535,53 @@ AGI_INCOME_COLUMNS: tuple[str, ...] = (
     "tip_income",
     "miscellaneous_income",
 )
+
+
+NOISE_FLOOR = 1.0   # per-unit changes smaller than this are treated as 0
+
+
+def _decile_impact(
+    delta: np.ndarray,
+    weight: np.ndarray,
+    axis: np.ndarray,
+) -> list[DecileImpactBin]:
+    """Group rows by weighted decile of `axis`; report mean delta + win/lose
+    shares per decile. Used to render the decile-impact chart."""
+    order = np.argsort(axis)
+    a = axis[order]
+    w = weight[order]
+    cw = np.cumsum(w)
+    if cw[-1] == 0:
+        return []
+    cuts_q = np.linspace(0, 1, 11)
+    cuts = np.interp(cuts_q, (cw - 0.5 * w) / cw[-1], a)
+    cuts[0] = -np.inf
+    cuts[-1] = np.inf
+
+    bins: list[DecileImpactBin] = []
+    for i in range(10):
+        lo, hi = cuts[i], cuts[i + 1]
+        mask = (axis >= lo) & (axis < hi) if i < 9 else (axis >= lo)
+        wm = weight[mask]
+        dm = delta[mask]
+        total_w = float(wm.sum())
+        mean_d = float((dm * wm).sum() / total_w) if total_w else 0.0
+        win_share = (
+            float(wm[dm > NOISE_FLOOR].sum() / total_w) if total_w else 0.0
+        )
+        lose_share = (
+            float(wm[dm < -NOISE_FLOOR].sum() / total_w) if total_w else 0.0
+        )
+        bins.append(DecileImpactBin(
+            decile=i + 1,
+            income_floor=float(lo) if np.isfinite(lo) else 0.0,
+            income_ceiling=float(hi) if np.isfinite(hi) else float(axis.max()),
+            households_weighted=total_w,
+            mean_delta=mean_d,
+            share_winners=win_share,
+            share_losers=lose_share,
+        ))
+    return bins
 
 
 def _tax_unit_agi(batch) -> np.ndarray:

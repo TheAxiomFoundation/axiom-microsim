@@ -15,6 +15,16 @@ export interface Baseline {
   decile_distribution: DecileBin[];
 }
 
+export interface DecileImpactBin {
+  decile: number;
+  income_floor: number;
+  income_ceiling: number;
+  households_weighted: number;
+  mean_delta: number;
+  share_winners: number;
+  share_losers: number;
+}
+
 export interface Reform {
   baseline_annual_cost: number;
   reform_annual_cost: number;
@@ -25,6 +35,7 @@ export interface Reform {
   households_total_weighted: number;
   average_winner_gain_monthly: number;
   average_loser_loss_monthly: number;
+  decile_impact: DecileImpactBin[];
 }
 
 export interface MicrosimResponse {

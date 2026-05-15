@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DecileChart } from "@/components/DecileChart";
+import { DecileImpactChart } from "@/components/DecileImpactChart";
 import { WinnersLosers } from "@/components/WinnersLosers";
 import { PROGRAMS, programById, type Lever, type ProgramId } from "@/lib/levers";
 import { fmtCount, fmtCurrency } from "@/lib/format";
@@ -510,11 +511,31 @@ export default function Page() {
                   reform={reform.data.reform}
                   winnersLabel={program.winners_label}
                   losersLabel={program.losers_label}
+                  unitLabel={programId === "co-snap" ? "households" : "tax units"}
                 />
               ) : (
                 <div className="py-2 text-sm text-ink-muted">computing…</div>
               )}
             </Card>
+
+            {reform.data?.reform?.decile_impact && reform.data.reform.decile_impact.length > 0 && (
+              <Card
+                title="Mean change by income decile"
+                subtitle={
+                  programId === "co-snap"
+                    ? "Households grouped by gross income decile. Bars show mean monthly benefit change."
+                    : "Tax units grouped by AGI decile. Bars show mean annual change in liability/credit."
+                }
+              >
+                <DecileImpactChart
+                  bins={reform.data.reform.decile_impact}
+                  metricLabel={
+                    programId === "co-snap" ? "Mean monthly Δ" : "Mean annual Δ"
+                  }
+                  metricSuffix={programId === "co-snap" ? "/mo" : "/yr"}
+                />
+              </Card>
+            )}
 
             {/* PE comparison for the reform — only if any applied lever
                 has a PE translation. */}

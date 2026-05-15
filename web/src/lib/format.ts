@@ -13,4 +13,4 @@ export const fmtCount = (n: number) => {
 };
 
 export const fmtPct = (n: number) =>
-  `${(n * 100).toFixed(n < 0.01 ? 2 : 1)}%`;
+  n === 0 ? "0%" : `${(n * 100).toFixed(n < 0.01 ? 2 : 1)}%`;

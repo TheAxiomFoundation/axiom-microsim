@@ -1,0 +1,11 @@
+{
+  "computed_at": "2026-05-15T14:50:46Z",
+  "year": 2026,
+  "dataset": "enhanced_cps_2024_2026",
+  "federal_income_tax": null,
+  "co_snap": null,
+  "errors": [
+    "federal_income_tax: 'income_tax_main_rates'",
+    "co_snap: 'state_code_str'"
+  ]
+}

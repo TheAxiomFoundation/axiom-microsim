@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono, Newsreader, Geist } from "next/font/google";
+import { Nav } from "@/components/Nav";
 import "./globals.css";
 
 const sans = Geist({
@@ -39,7 +40,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       className={`${sans.variable} ${serif.variable} ${mono.variable}`}
     >
-      <body className="bg-paper text-ink antialiased">{children}</body>
+      <body className="bg-paper text-ink antialiased">
+        <Nav />
+        {children}
+      </body>
     </html>
   );
 }

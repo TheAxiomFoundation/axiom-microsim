@@ -9,7 +9,6 @@ import { fmtCount, fmtCurrency } from "@/lib/format";
 import type { MicrosimRequest, MicrosimResponse } from "@/lib/types";
 
 const YEAR = 2026;
-
 const initialDraft = (programId: ProgramId): Record<string, number> =>
   Object.fromEntries(programById(programId).levers.map((l) => [l.id, l.baseline]));
 
@@ -38,9 +37,6 @@ export default function Page() {
   const [programId, setProgramId] = useState<ProgramId>("federal-ctc");
   const program = useMemo(() => programById(programId), [programId]);
   const [state, setState] = useState<string>(program.default_state);
-  // Eagerly initialise draft / applied for the current program so the
-  // first render of LeverControl always has a defined value (no
-  // controlled→uncontrolled flicker when the program toggles).
   const [draft, setDraft] = useState<Record<string, number>>(() => initialDraft("federal-ctc"));
   const [applied, setApplied] = useState<Record<string, number>>(() => initialDraft("federal-ctc"));
   const [baseline, setBaseline] = useState<RunState>(initial);
@@ -48,10 +44,6 @@ export default function Page() {
   const [pe, setPe] = useState<PeState>(peInitial);
   const [now, setNow] = useState(Date.now());
 
-  // Reset everything when program / state changes. Use the functional
-  // form so the new draft is computed from the new programId synchronously
-  // — and combine with a useMemo guard to avoid the brief render where
-  // draft is keyed for the OLD program but levers come from the NEW one.
   useEffect(() => {
     setState(program.default_state);
     setDraft(initialDraft(programId));
@@ -61,7 +53,6 @@ export default function Page() {
     setPe(peInitial);
   }, [programId, program.default_state]);
 
-  // Re-set the slider draft whenever the state changes too.
   useEffect(() => {
     setDraft(initialDraft(programId));
     setApplied(initialDraft(programId));
@@ -102,10 +93,8 @@ export default function Page() {
               values[l.id] === l.baseline ? [] : l.build(values[l.id]),
             )
           : [];
-
       const startedAt = Date.now();
       setter((prev) => ({ ...prev, loadingMs: 0, startedAt, error: null }));
-
       const body: MicrosimRequest = { program: programId, state, year: YEAR, overrides };
       try {
         const r = await fetch("/api/microsim", {
@@ -119,9 +108,7 @@ export default function Page() {
         if (kind === "reform") setApplied(values);
       } catch (e) {
         setter({
-          data: null,
-          loadingMs: null,
-          startedAt: null,
+          data: null, loadingMs: null, startedAt: null,
           error: String((e as Error).message ?? e),
         });
       }
@@ -141,12 +128,8 @@ export default function Page() {
       if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
       const data = await r.json();
       setPe({
-        total: data.pe_total,
-        filers: data.pe_weighted_filers,
-        avg: data.pe_avg_per_filer,
-        loadingMs: Date.now() - startedAt,
-        startedAt: null,
-        error: null,
+        total: data.pe_total, filers: data.pe_weighted_filers, avg: data.pe_avg_per_filer,
+        loadingMs: Date.now() - startedAt, startedAt: null, error: null,
       });
     } catch (e) {
       setPe({
@@ -170,9 +153,11 @@ export default function Page() {
   const baselineRunning = baseline.startedAt !== null;
   const reformRunning = reform.startedAt !== null;
   const peRunning = pe.startedAt !== null;
+  const reformDelta = reform.data?.reform?.delta_annual_cost ?? null;
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-12">
+      {/* ---- Title + program/scope switcher ---- */}
       <header className="mb-8 border-b border-rule pb-6">
         <div className="flex items-center gap-2 font-mono text-[0.7rem] uppercase tracking-eyebrow text-accent">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" />
@@ -224,178 +209,298 @@ export default function Page() {
         </div>
       </header>
 
-      {/* Two big headline numbers */}
-      <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Headline
-          eyebrow={`Baseline · ${program.headline_label.toLowerCase()}`}
+      {/* ===========================================================
+          1 — BASELINE
+          =========================================================== */}
+      <SectionHeading number="01" title="Baseline" subtitle="Current law as-is, on the Enhanced CPS." />
+
+      <section className="mb-12 space-y-6">
+        {baseline.error && (
+          <ErrorBox>Baseline error: {baseline.error}</ErrorBox>
+        )}
+
+        <BigStat
+          eyebrow={program.headline_label}
           value={baseline.data ? fmtCurrency(baseline.data.baseline.annual_cost) : "—"}
-          sub={
-            baseline.data
-              ? `${fmtCount(baseline.data.baseline.households_with_benefit)} ${
-                  programId === "co-snap" ? "households" : "tax units"
-                } affected · avg ${fmtCurrency(baseline.data.baseline.average_monthly_benefit)} ${
-                  programId === "co-snap" ? "/ mo" : "/ yr"
-                }`
-              : "—"
-          }
           loading={baselineRunning}
           loadingElapsed={baselineRunning ? (now - (baseline.startedAt ?? now)) / 1000 : null}
+          subRows={
+            baseline.data
+              ? [
+                  {
+                    label: programId === "co-snap" ? "Households w/ benefit" : "Tax units affected",
+                    value: fmtCount(baseline.data.baseline.households_with_benefit),
+                  },
+                  {
+                    label: programId === "co-snap" ? "Avg monthly benefit" : programId === "federal-ctc" ? "Avg credit per recipient" : "Avg per filer",
+                    value: fmtCurrency(baseline.data.baseline.average_monthly_benefit),
+                  },
+                  {
+                    label: "Sample / weighted",
+                    value: `${baseline.data.n_households_sampled.toLocaleString()} / ${fmtCount(baseline.data.households_total_weighted)}`,
+                  },
+                ]
+              : []
+          }
         />
-        <Headline
-          eyebrow="Reform · change vs baseline"
-          value={
-            reform.data?.reform
-              ? fmtSignedCurrency(reform.data.reform.delta_annual_cost)
-              : "—"
-          }
-          sub={
-            reform.data?.reform
-              ? `Reform total ${fmtCurrency(reform.data.reform.reform_annual_cost)}`
-              : "Adjust a slider, then click Run reform."
-          }
-          loading={reformRunning}
-          loadingElapsed={reformRunning ? (now - (reform.startedAt ?? now)) / 1000 : null}
-          accent={
-            reform.data?.reform
-              ? reform.data.reform.delta_annual_cost > 0
-                ? "text-error"
-                : reform.data.reform.delta_annual_cost < 0
-                  ? "text-success"
-                  : undefined
-              : undefined
-          }
+
+        <Card title="Distribution by income decile" subtitle={decileSubtitle(programId)}>
+          {baseline.data && (
+            <div className="h-72 w-full">
+              <DecileChart
+                bins={baseline.data.baseline.decile_distribution}
+                metricLabel={decileMetricLabel(programId)}
+                metricSuffix={programId === "co-snap" ? "/mo" : "/yr"}
+              />
+            </div>
+          )}
+        </Card>
+
+        <PePanel
+          pe={pe}
+          running={peRunning}
+          elapsed={peRunning ? (now - (pe.startedAt ?? now)) / 1000 : null}
+          onRun={runPe}
+          axiomBaseline={baseline.data?.baseline.annual_cost}
+          axiomFilers={baseline.data?.baseline.households_with_benefit}
+          axiomAvg={baseline.data?.baseline.average_monthly_benefit}
+          programId={programId}
         />
       </section>
 
-      {/* PE comparison panel — live, opt-in */}
-      <PePanel
-        pe={pe}
-        running={peRunning}
-        elapsed={peRunning ? (now - (pe.startedAt ?? now)) / 1000 : null}
-        onRun={runPe}
-        axiomBaseline={baseline.data?.baseline.annual_cost}
-        axiomFilers={baseline.data?.baseline.households_with_benefit}
-        axiomAvg={baseline.data?.baseline.average_monthly_benefit}
-        programId={programId}
+      {/* ===========================================================
+          2 — REFORM CONTROLS
+          =========================================================== */}
+      <SectionHeading
+        number="02"
+        title="Reform"
+        subtitle="Adjust parameters, then run the patched program over the same population."
       />
 
-      <div className="grid gap-6 lg:grid-cols-[340px,1fr]">
-        {/* Sidebar: levers */}
-        <aside className="space-y-5 rounded-md border border-rule bg-paper-elev p-5">
-          <h2 className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
-            Reform parameters
-          </h2>
-
-          {program.levers.map((l) => (
-            <LeverControl
-              key={l.id}
-              lever={l}
-              // Default to the lever's baseline when draft hasn't been
-              // initialised for this lever yet (happens for one render
-              // when the program switches before the reset effect runs).
-              value={draft[l.id] ?? l.baseline}
-              applied={applied[l.id] ?? l.baseline}
-              onChange={(v) => setDraft((prev) => ({ ...prev, [l.id]: v }))}
-            />
-          ))}
-
-          <button
-            onClick={onRunReform}
-            disabled={!draftReforming || reformRunning || !dirty}
-            className={`w-full rounded-sm px-4 py-2.5 text-sm font-semibold uppercase tracking-eyebrow transition ${
-              !draftReforming || !dirty
-                ? "cursor-not-allowed bg-rule text-ink-muted"
-                : reformRunning
-                  ? "cursor-wait bg-accent-hover text-white"
-                  : "bg-accent text-white hover:bg-accent-hover"
-            }`}
-          >
-            {reformRunning
-              ? `Running… ${((now - (reform.startedAt ?? now)) / 1000).toFixed(1)}s`
-              : !draftReforming
-                ? "Move a slider"
-                : !dirty
-                  ? "Reform up to date"
-                  : "▶ Run reform"}
-          </button>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => setDraft(initialDraft(programId))}
-              disabled={!draftReforming}
-              className="rounded-sm border border-rule px-3 py-1.5 text-xs text-ink-secondary hover:bg-rule-subtle disabled:cursor-not-allowed disabled:text-ink-muted"
-            >
-              Reset
-            </button>
-            <button
-              onClick={() => {
-                setReform(initial);
-                setApplied(initialDraft(programId));
-              }}
-              disabled={!appliedReforming}
-              className="rounded-sm border border-rule px-3 py-1.5 text-xs text-ink-secondary hover:bg-rule-subtle disabled:cursor-not-allowed disabled:text-ink-muted"
-            >
-              Clear reform
-            </button>
-          </div>
-        </aside>
-
-        {/* Charts */}
-        <section className="space-y-6">
-          {(baseline.error || reform.error) && (
-            <div className="rounded-sm border border-error bg-paper-elev p-3 text-sm text-error">
-              {baseline.error && <div>Baseline error: {baseline.error}</div>}
-              {reform.error && <div>Reform error: {reform.error}</div>}
-            </div>
-          )}
-
-          <Card title="Distribution by income decile" subtitle={decileSubtitle(programId)}>
-            {baseline.data && (
-              <div className="h-72 w-full">
-                <DecileChart
-                  bins={baseline.data.baseline.decile_distribution}
-                  metricLabel={decileMetricLabel(programId)}
-                  metricSuffix={programId === "co-snap" ? "/mo" : "/yr"}
-                />
-              </div>
-            )}
-          </Card>
-
-          <Card
-            title={`Reform impact on ${programId === "co-snap" ? "households" : "tax units"}`}
-            subtitle="Per-unit change vs baseline, weighted to the population."
-          >
-            {reform.data?.reform ? (
-              <WinnersLosers
-                reform={reform.data.reform}
-                winnersLabel={program.winners_label}
-                losersLabel={program.losers_label}
+      <section className="mb-12">
+        <div className="rounded-md border border-rule bg-paper-elev p-6">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {program.levers.map((l) => (
+              <LeverControl
+                key={l.id}
+                lever={l}
+                value={draft[l.id] ?? l.baseline}
+                applied={applied[l.id] ?? l.baseline}
+                onChange={(v) => setDraft((prev) => ({ ...prev, [l.id]: v }))}
               />
-            ) : (
-              <div className="rounded-sm border border-dashed border-rule px-4 py-8 text-center text-sm text-ink-muted">
-                Run a reform to populate.
+            ))}
+          </div>
+
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-rule pt-5">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onRunReform}
+                disabled={!draftReforming || reformRunning || !dirty}
+                className={`rounded-sm px-5 py-2.5 text-sm font-semibold uppercase tracking-eyebrow transition ${
+                  !draftReforming || !dirty
+                    ? "cursor-not-allowed bg-rule text-ink-muted"
+                    : reformRunning
+                      ? "cursor-wait bg-accent-hover text-white"
+                      : "bg-accent text-white hover:bg-accent-hover"
+                }`}
+              >
+                {reformRunning
+                  ? `Running… ${((now - (reform.startedAt ?? now)) / 1000).toFixed(1)}s`
+                  : !draftReforming
+                    ? "Move a slider to enable"
+                    : !dirty
+                      ? "Reform up to date"
+                      : "▶ Run reform"}
+              </button>
+              <button
+                onClick={() => setDraft(initialDraft(programId))}
+                disabled={!draftReforming}
+                className="rounded-sm border border-rule px-3 py-2 text-xs text-ink-secondary hover:bg-rule-subtle disabled:cursor-not-allowed disabled:text-ink-muted"
+              >
+                Reset sliders
+              </button>
+              <button
+                onClick={() => {
+                  setReform(initial);
+                  setApplied(initialDraft(programId));
+                }}
+                disabled={!appliedReforming}
+                className="rounded-sm border border-rule px-3 py-2 text-xs text-ink-secondary hover:bg-rule-subtle disabled:cursor-not-allowed disabled:text-ink-muted"
+              >
+                Clear reform
+              </button>
+            </div>
+
+            {dirty && draftReforming && !reformRunning && (
+              <div className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-warning">
+                ⚠ unsaved · click run reform
               </div>
             )}
-          </Card>
+          </div>
+        </div>
+      </section>
 
-          <footer className="text-xs text-ink-muted">
-            ECPS sample:{" "}
-            {baseline.data?.n_households_sampled.toLocaleString() ?? "—"}{" "}
-            {programId === "co-snap" ? "households" : "tax units"} ·{" "}
-            {baseline.data?.n_persons_sampled.toLocaleString() ?? "—"} persons ·{" "}
-            <code className="font-mono">enhanced_cps_2024.h5</code> · engine{" "}
-            <code className="font-mono">axiom-rules-engine</code>. See{" "}
-            <a href="/methodology" className="text-accent underline">/methodology</a>{" "}
-            for slot mappings, calculations, and limitations.
-          </footer>
-        </section>
-      </div>
+      {/* ===========================================================
+          3 — REFORM OUTPUT
+          =========================================================== */}
+      <SectionHeading
+        number="03"
+        title="Reform impact"
+        subtitle="Difference vs the baseline above, weighted to the same population."
+      />
+
+      <section className="mb-8 space-y-6">
+        {reform.error && (
+          <ErrorBox>Reform error: {reform.error}</ErrorBox>
+        )}
+
+        {!reform.data?.reform && !reformRunning && (
+          <div className="rounded-md border border-dashed border-rule bg-paper-elev p-8 text-center text-sm text-ink-muted">
+            Adjust a slider above and click <strong className="text-ink">▶ Run reform</strong>.
+          </div>
+        )}
+
+        {(reform.data?.reform || reformRunning) && (
+          <>
+            <BigStat
+              eyebrow="Change vs baseline"
+              value={
+                reform.data?.reform
+                  ? fmtSignedCurrency(reform.data.reform.delta_annual_cost)
+                  : "—"
+              }
+              loading={reformRunning}
+              loadingElapsed={reformRunning ? (now - (reform.startedAt ?? now)) / 1000 : null}
+              accent={
+                reformDelta == null
+                  ? undefined
+                  : reformDelta > 0
+                    ? "text-error"
+                    : reformDelta < 0
+                      ? "text-success"
+                      : undefined
+              }
+              subRows={
+                reform.data?.reform
+                  ? [
+                      {
+                        label: "Reform total",
+                        value: fmtCurrency(reform.data.reform.reform_annual_cost),
+                      },
+                      {
+                        label: "Baseline total",
+                        value: fmtCurrency(reform.data.reform.baseline_annual_cost),
+                      },
+                      {
+                        label: "% change",
+                        value:
+                          reform.data.reform.baseline_annual_cost !== 0
+                            ? `${((reform.data.reform.delta_annual_cost / reform.data.reform.baseline_annual_cost) * 100).toFixed(1)}%`
+                            : "—",
+                      },
+                    ]
+                  : []
+              }
+            />
+
+            <Card
+              title={`Per-${programId === "co-snap" ? "household" : "tax-unit"} impact`}
+              subtitle="Weighted shares; per-unit average gain or loss against baseline."
+            >
+              {reform.data?.reform ? (
+                <WinnersLosers
+                  reform={reform.data.reform}
+                  winnersLabel={program.winners_label}
+                  losersLabel={program.losers_label}
+                />
+              ) : (
+                <div className="py-2 text-sm text-ink-muted">computing…</div>
+              )}
+            </Card>
+          </>
+        )}
+      </section>
+
+      <footer className="border-t border-rule pt-4 text-xs text-ink-muted">
+        ECPS sample: {baseline.data?.n_households_sampled.toLocaleString() ?? "—"}{" "}
+        {programId === "co-snap" ? "households" : "tax units"} ·{" "}
+        {baseline.data?.n_persons_sampled.toLocaleString() ?? "—"} persons ·{" "}
+        <code className="font-mono">enhanced_cps_2024.h5</code> · engine{" "}
+        <code className="font-mono">axiom-rules-engine</code>. See{" "}
+        <a href="/methodology" className="text-accent underline">/methodology</a>{" "}
+        for slot mappings, calculations, and limitations.
+      </footer>
     </main>
   );
 }
 
 
 // --- pieces -----------------------------------------------------------------
+
+function SectionHeading({
+  number,
+  title,
+  subtitle,
+}: {
+  number: string;
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <div className="mb-4">
+      <div className="flex items-baseline gap-3">
+        <span className="font-mono text-[0.7rem] uppercase tracking-eyebrow text-accent">
+          § {number}
+        </span>
+        <h2 className="font-serif text-2xl text-ink">{title}</h2>
+      </div>
+      {subtitle && <p className="mt-1 text-sm text-ink-secondary">{subtitle}</p>}
+    </div>
+  );
+}
+
+function BigStat({
+  eyebrow,
+  value,
+  loading,
+  loadingElapsed,
+  accent,
+  subRows,
+}: {
+  eyebrow: string;
+  value: string;
+  loading: boolean;
+  loadingElapsed: number | null;
+  accent?: string;
+  subRows?: { label: string; value: string }[];
+}) {
+  return (
+    <div className="rounded-md border border-rule bg-paper-elev p-6">
+      <div className="font-mono text-[0.7rem] uppercase tracking-eyebrow text-ink-muted">
+        {eyebrow}
+      </div>
+      <div className={`mt-3 font-serif text-[3.5rem] leading-none tracking-tight ${accent ?? "text-ink"}`}>
+        {loading ? (
+          <span className="font-mono text-2xl text-ink-muted">
+            running… {loadingElapsed?.toFixed(1)}s
+          </span>
+        ) : value}
+      </div>
+      {subRows && subRows.length > 0 && (
+        <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-rule pt-4 md:grid-cols-3">
+          {subRows.map((row) => (
+            <div key={row.label}>
+              <dt className="font-mono text-[0.6rem] uppercase tracking-eyebrow text-ink-muted">
+                {row.label}
+              </dt>
+              <dd className="mt-0.5 font-mono text-sm text-ink">{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
 
 function LeverControl({
   lever,
@@ -410,12 +515,8 @@ function LeverControl({
 }) {
   const changed = value !== applied;
   const isAmount = lever.kind === "amount";
-  const display = isAmount
-    ? fmtCurrency(value)
-    : `${(value * 100).toFixed(0)}%`;
-  const appliedDisplay = isAmount
-    ? fmtCurrency(applied)
-    : `${(applied * 100).toFixed(0)}%`;
+  const display = isAmount ? fmtCurrency(value) : `${(value * 100).toFixed(0)}%`;
+  const appliedDisplay = isAmount ? fmtCurrency(applied) : `${(applied * 100).toFixed(0)}%`;
   return (
     <div className="space-y-2">
       <div className="flex items-baseline justify-between gap-3">
@@ -426,9 +527,6 @@ function LeverControl({
           }`}
         >
           {display}
-          {changed && (
-            <span className="ml-1 text-ink-muted">(was {appliedDisplay})</span>
-          )}
         </span>
       </div>
       <input
@@ -443,30 +541,8 @@ function LeverControl({
       <div className="text-xs text-ink-muted">{lever.description}</div>
       <div className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
         baseline · {lever.baseline_label}
+        {changed && <span className="ml-2 text-warning">last run · {appliedDisplay}</span>}
       </div>
-    </div>
-  );
-}
-
-function Headline({
-  eyebrow, value, sub, loading, loadingElapsed, accent,
-}: {
-  eyebrow: string; value: string; sub: string;
-  loading: boolean; loadingElapsed: number | null; accent?: string;
-}) {
-  return (
-    <div className="rounded-md border border-rule bg-paper-elev p-6">
-      <div className="font-mono text-[0.7rem] uppercase tracking-eyebrow text-ink-muted">
-        {eyebrow}
-      </div>
-      <div className={`mt-3 font-serif text-[3rem] leading-none tracking-tight ${accent ?? "text-ink"}`}>
-        {loading ? (
-          <span className="font-mono text-2xl text-ink-muted">
-            running… {loadingElapsed?.toFixed(1)}s
-          </span>
-        ) : value}
-      </div>
-      <div className="mt-3 text-sm text-ink-secondary">{sub}</div>
     </div>
   );
 }
@@ -478,6 +554,14 @@ function Card({
     <div className="rounded-md border border-rule bg-paper-elev p-6">
       <h3 className="font-serif text-lg text-ink">{title}</h3>
       {subtitle && <p className="mb-4 text-xs text-ink-muted">{subtitle}</p>}
+      {children}
+    </div>
+  );
+}
+
+function ErrorBox({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-sm border border-error bg-paper-elev p-3 text-sm text-error">
       {children}
     </div>
   );
@@ -498,50 +582,33 @@ function PePanel({
 }) {
   const ratio = (a?: number | null, p?: number | null) =>
     a != null && p != null && p !== 0 ? `${((a / p) * 100).toFixed(0)}%` : "—";
-
   const hasResult = pe.total != null;
 
   return (
-    <div className="mb-8 rounded-md border border-rule bg-paper-elev p-5">
-      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
+    <div className="rounded-md border border-rule bg-paper-elev p-5">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
         <div>
           <div className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-accent">
             Side-by-side · PolicyEngine
           </div>
-          <h3 className="mt-1 font-serif text-lg text-ink">
-            Live comparison — same dataset, same parameters, computed fresh.
-          </h3>
+          <div className="mt-0.5 text-sm text-ink-secondary">
+            Same dataset, same parameters, computed fresh — no caching.
+          </div>
         </div>
         <button
           onClick={onRun}
           disabled={running}
           className={`rounded-sm px-3 py-2 font-mono text-xs uppercase tracking-eyebrow transition ${
-            running
-              ? "cursor-wait bg-accent-hover text-white"
-              : "bg-accent text-white hover:bg-accent-hover"
+            running ? "cursor-wait bg-accent-hover text-white" : "bg-accent text-white hover:bg-accent-hover"
           }`}
-          title="Run PolicyEngine on the same scope (~100s)"
         >
           {running
             ? `Running PE… ${elapsed?.toFixed(1)}s`
-            : hasResult
-              ? "▶ Re-run PE comparison"
-              : "▶ Run PE comparison"}
+            : hasResult ? "▶ Re-run PE" : "▶ Run PE comparison"}
         </button>
       </div>
 
-      {pe.error && (
-        <div className="mb-3 rounded-sm border border-error bg-paper p-3 text-sm text-error">
-          {pe.error}
-        </div>
-      )}
-
-      {!hasResult && !running && !pe.error && (
-        <p className="text-xs text-ink-muted">
-          Click <em>Run PE comparison</em> to compute the same aggregate in PolicyEngine.
-          Takes ~100 s; nothing is cached, every click recomputes both sides fresh.
-        </p>
-      )}
+      {pe.error && <ErrorBox>{pe.error}</ErrorBox>}
 
       {(hasResult || running) && (
         <div className="overflow-hidden rounded-sm border border-rule">
@@ -568,7 +635,11 @@ function PePanel({
                 ratio={ratio(axiomFilers, pe.filers)}
               />
               <Row
-                metric={programId === "co-snap" ? "Avg monthly benefit" : programId === "federal-ctc" ? "Avg credit per recipient" : "Avg per filer"}
+                metric={
+                  programId === "co-snap" ? "Avg monthly benefit"
+                    : programId === "federal-ctc" ? "Avg credit per recipient"
+                      : "Avg per filer"
+                }
                 axiom={axiomAvg != null ? fmtCurrency(axiomAvg) : "—"}
                 pe={pe.avg != null ? fmtCurrency(pe.avg) : "—"}
                 ratio={ratio(axiomAvg, pe.avg)}
@@ -576,14 +647,6 @@ function PePanel({
             </tbody>
           </table>
         </div>
-      )}
-
-      {hasResult && pe.loadingMs && (
-        <p className="mt-3 font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
-          PE computed in {(pe.loadingMs / 1000).toFixed(1)}s · see{" "}
-          <a href="/methodology" className="text-accent underline">/methodology</a>{" "}
-          for what each side does and doesn't model.
-        </p>
       )}
     </div>
   );

@@ -225,10 +225,16 @@ _PE_PYTHON = _Path(
 _PE_SCRIPT = _Path(__file__).resolve().parent.parent / "scripts" / "compute_pe_one.py"
 
 
+class PeOverrideIn(BaseModel):
+    path: str
+    value: float
+
+
 class CompareRequest(BaseModel):
     program: Literal["co-snap", "federal-income-tax", "federal-ctc"]
     state: str = "US"
     year: int = 2026
+    overrides: list[PeOverrideIn] = Field(default_factory=list)
 
 
 class CompareResponse(BaseModel):
@@ -253,12 +259,14 @@ def compare(req: CompareRequest) -> CompareResponse:
         )
     import time as _time
     t0 = _time.time()
+    overrides_json = json.dumps([{"path": o.path, "value": o.value} for o in req.overrides])
     proc = _subprocess.run(
         [
             str(_PE_PYTHON), str(_PE_SCRIPT),
             "--program", req.program,
             "--state", req.state,
             "--year", str(req.year),
+            "--overrides", overrides_json,
         ],
         capture_output=True, text=True, timeout=600,
     )

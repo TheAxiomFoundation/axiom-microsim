@@ -28,15 +28,41 @@ def _values(sim, var: str, period):
     return s.values, s.weights
 
 
-def run(program: str, state: str, year: int) -> dict:
-    sys.stderr.write(f"[PE] loading {ECPS_HF_PATH} for {year}...\n")
+def _build_sim(year: int, overrides: list[dict] | None):
+    """Build a Microsimulation, applying optional parametric overrides.
+
+    Each override is ``{"path": "<dotted PE param path>", "value": <num>}``.
+    Wrapped into a PolicyEngine Reform via ``Reform.from_dict``. Paths that
+    target a bracket of a Scale parameter must include the bracket index,
+    e.g. ``gov.irs.credits.ctc.amount.base.brackets[0].amount``.
+    """
+    sys.stderr.write(f"[PE] loading {ECPS_HF_PATH} for {year}")
+    if overrides:
+        sys.stderr.write(f" with {len(overrides)} override(s)")
+    sys.stderr.write("...\n")
     sys.stderr.flush()
     t0 = time.time()
     from policyengine_us import Microsimulation  # type: ignore[import-not-found]
-    sim = Microsimulation(dataset=ECPS_HF_PATH)
+
+    reform = None
+    if overrides:
+        from policyengine_core.reforms import Reform  # type: ignore[import-not-found]
+        reform_dict = {}
+        period_key = f"{year}-01-01.{year}-12-31"
+        for ov in overrides:
+            reform_dict[ov["path"]] = {period_key: ov["value"]}
+        reform = Reform.from_dict(reform_dict, country_id="us")
+        sys.stderr.write(f"[PE]   built reform with {len(overrides)} override(s)\n")
+
+    sim = Microsimulation(dataset=ECPS_HF_PATH, reform=reform) if reform \
+        else Microsimulation(dataset=ECPS_HF_PATH)
     sys.stderr.write(f"[PE]   sim built in {time.time() - t0:.1f}s\n")
     sys.stderr.flush()
+    return sim
 
+
+def run(program: str, state: str, year: int, overrides: list[dict] | None) -> dict:
+    sim = _build_sim(year, overrides)
     if program == "federal-income-tax":
         return _run_federal_income_tax(sim, state, year)
     if program == "federal-ctc":
@@ -139,10 +165,16 @@ def main() -> int:
     parser.add_argument("--program", required=True)
     parser.add_argument("--state", required=True)
     parser.add_argument("--year", type=int, required=True)
+    parser.add_argument(
+        "--overrides",
+        default="[]",
+        help='JSON list of {"path": "...", "value": ...} parameter overrides.',
+    )
     args = parser.parse_args()
 
     try:
-        result = run(args.program, args.state, args.year)
+        overrides = json.loads(args.overrides)
+        result = run(args.program, args.state, args.year, overrides or None)
     except Exception as exc:
         sys.stderr.write(f"[PE] failed: {exc}\n")
         import traceback; traceback.print_exc(file=sys.stderr)

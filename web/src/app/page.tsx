@@ -1,12 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DecileChart } from "@/components/DecileChart";
 import { WinnersLosers } from "@/components/WinnersLosers";
 import { PROGRAMS, programById, type Lever, type ProgramId } from "@/lib/levers";
 import { fmtCount, fmtCurrency } from "@/lib/format";
 import type { MicrosimRequest, MicrosimResponse } from "@/lib/types";
+
+const cacheKey = (programId: string, state: string, year: number) =>
+  `${programId}|${state}|${year}`;
 
 const YEAR = 2026;
 const initialDraft = (programId: ProgramId): Record<string, number> =>
@@ -42,22 +45,44 @@ export default function Page() {
   const [baseline, setBaseline] = useState<RunState>(initial);
   const [reform, setReform] = useState<RunState>(initial);
   const [pe, setPe] = useState<PeState>(peInitial);
+  const [peReform, setPeReform] = useState<PeState>(peInitial);
   const [now, setNow] = useState(Date.now());
+
+  // Session caches keyed by `program|state|year`. Switching programs or
+  // scopes is now free if we've already computed that combination.
+  // Refs (not state) so writes don't trigger renders.
+  const baselineCache = useRef<Map<string, MicrosimResponse>>(new Map());
+  const peCache = useRef<Map<string, { total: number; filers: number; avg: number; loadingMs: number }>>(
+    new Map(),
+  );
+  // Reform-PE cache keyed by (program|state|year|appliedOverridesHash).
+  const peReformCache = useRef<Map<string, { total: number; filers: number; avg: number; loadingMs: number }>>(
+    new Map(),
+  );
 
   useEffect(() => {
     setState(program.default_state);
     setDraft(initialDraft(programId));
     setApplied(initialDraft(programId));
-    setBaseline(initial);
     setReform(initial);
-    setPe(peInitial);
+    setPeReform(peInitial);
+    const k = cacheKey(programId, program.default_state, YEAR);
+    const cb = baselineCache.current.get(k);
+    setBaseline(cb ? { data: cb, loadingMs: 0, startedAt: null, error: null } : initial);
+    const cp = peCache.current.get(k);
+    setPe(cp ? { ...cp, startedAt: null, error: null } : peInitial);
   }, [programId, program.default_state]);
 
   useEffect(() => {
     setDraft(initialDraft(programId));
     setApplied(initialDraft(programId));
     setReform(initial);
-    setPe(peInitial);
+    setPeReform(peInitial);
+    const k = cacheKey(programId, state, YEAR);
+    const cb = baselineCache.current.get(k);
+    setBaseline(cb ? { data: cb, loadingMs: 0, startedAt: null, error: null } : initial);
+    const cp = peCache.current.get(k);
+    setPe(cp ? { ...cp, startedAt: null, error: null } : peInitial);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
@@ -105,6 +130,9 @@ export default function Page() {
         if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
         const data = (await r.json()) as MicrosimResponse;
         setter({ data, loadingMs: Date.now() - startedAt, startedAt: null, error: null });
+        if (kind === "baseline") {
+          baselineCache.current.set(cacheKey(programId, state, YEAR), data);
+        }
         if (kind === "reform") setApplied(values);
       } catch (e) {
         setter({
@@ -115,6 +143,68 @@ export default function Page() {
     },
     [programId, state, program.levers],
   );
+
+  /** Build PE overrides from the currently-applied lever values, using
+   *  each lever's optional peBuild translation. Returns null if no
+   *  reform is applied or no lever has a PE mapping. */
+  const peReformOverrides = useMemo(() => {
+    const out: { path: string; value: number }[] = [];
+    for (const l of program.levers) {
+      const v = applied[l.id];
+      if (v === undefined || v === l.baseline) continue;
+      if (!l.peBuild) continue;
+      out.push(...l.peBuild(v));
+    }
+    return out.length ? out : null;
+  }, [applied, program.levers]);
+
+  const reformCacheKey = useMemo(() => {
+    if (!peReformOverrides) return null;
+    return cacheKey(programId, state, YEAR) + "|" + JSON.stringify(peReformOverrides);
+  }, [programId, state, peReformOverrides]);
+
+  const runPeReform = useCallback(async () => {
+    if (!peReformOverrides || !reformCacheKey) return;
+    const startedAt = Date.now();
+    setPeReform({ total: null, filers: null, avg: null, loadingMs: 0, startedAt, error: null });
+    try {
+      const r = await fetch("/api/compare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          program: programId, state, year: YEAR, overrides: peReformOverrides,
+        }),
+      });
+      if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
+      const data = await r.json();
+      const result = {
+        total: data.pe_total as number,
+        filers: data.pe_weighted_filers as number,
+        avg: data.pe_avg_per_filer as number,
+        loadingMs: Date.now() - startedAt,
+      };
+      peReformCache.current.set(reformCacheKey, result);
+      setPeReform({ ...result, startedAt: null, error: null });
+    } catch (e) {
+      setPeReform({
+        total: null, filers: null, avg: null,
+        loadingMs: null, startedAt: null,
+        error: String((e as Error).message ?? e),
+      });
+    }
+  }, [programId, state, peReformOverrides, reformCacheKey]);
+
+  // Hydrate reform-PE from cache when applied changes.
+  useEffect(() => {
+    if (!reformCacheKey) {
+      setPeReform(peInitial);
+      return;
+    }
+    const cached = peReformCache.current.get(reformCacheKey);
+    setPeReform(
+      cached ? { ...cached, startedAt: null, error: null } : peInitial,
+    );
+  }, [reformCacheKey]);
 
   const runPe = useCallback(async () => {
     const startedAt = Date.now();
@@ -127,10 +217,14 @@ export default function Page() {
       });
       if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
       const data = await r.json();
-      setPe({
-        total: data.pe_total, filers: data.pe_weighted_filers, avg: data.pe_avg_per_filer,
-        loadingMs: Date.now() - startedAt, startedAt: null, error: null,
-      });
+      const peResult = {
+        total: data.pe_total as number,
+        filers: data.pe_weighted_filers as number,
+        avg: data.pe_avg_per_filer as number,
+        loadingMs: Date.now() - startedAt,
+      };
+      peCache.current.set(cacheKey(programId, state, YEAR), peResult);
+      setPe({ ...peResult, startedAt: null, error: null });
     } catch (e) {
       setPe({
         total: null, filers: null, avg: null,
@@ -140,7 +234,10 @@ export default function Page() {
     }
   }, [programId, state]);
 
+  // Compute baseline only if we don't already have it cached. Cache hits
+  // are reflected immediately by the program/state effect above.
   useEffect(() => {
+    if (baselineCache.current.has(cacheKey(programId, state, YEAR))) return;
     void runMicrosim("baseline", initialDraft(programId));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [programId, state]);
@@ -153,6 +250,7 @@ export default function Page() {
   const baselineRunning = baseline.startedAt !== null;
   const reformRunning = reform.startedAt !== null;
   const peRunning = pe.startedAt !== null;
+  const peReformRunning = peReform.startedAt !== null;
   const reformDelta = reform.data?.reform?.delta_annual_cost ?? null;
 
   return (
@@ -417,6 +515,22 @@ export default function Page() {
                 <div className="py-2 text-sm text-ink-muted">computing…</div>
               )}
             </Card>
+
+            {/* PE comparison for the reform — only if any applied lever
+                has a PE translation. */}
+            {appliedReforming && (
+              <PeReformPanel
+                pe={peReform}
+                running={peReformRunning}
+                elapsed={peReformRunning ? (now - (peReform.startedAt ?? now)) / 1000 : null}
+                onRun={runPeReform}
+                hasMapping={peReformOverrides != null}
+                axiomReform={reform.data?.reform?.reform_annual_cost}
+                axiomBaseline={reform.data?.reform?.baseline_annual_cost}
+                peBaseline={pe.total}
+                programId={programId}
+              />
+            )}
           </>
         )}
       </section>
@@ -592,7 +706,7 @@ function PePanel({
             Side-by-side · PolicyEngine
           </div>
           <div className="mt-0.5 text-sm text-ink-secondary">
-            Same dataset, same parameters, computed fresh — no caching.
+            Same dataset, same parameters; cached per program/scope this session.
           </div>
         </div>
         <button
@@ -660,6 +774,102 @@ function Row({ metric, axiom, pe, ratio }: { metric: string; axiom: string; pe: 
       <td className="px-3 py-2 text-right text-ink-secondary">{pe}</td>
       <td className="px-3 py-2 text-right text-accent">{ratio}</td>
     </tr>
+  );
+}
+
+function PeReformPanel({
+  pe, running, elapsed, onRun, hasMapping,
+  axiomReform, axiomBaseline, peBaseline, programId,
+}: {
+  pe: PeState;
+  running: boolean;
+  elapsed: number | null;
+  onRun: () => void;
+  hasMapping: boolean;
+  axiomReform?: number;
+  axiomBaseline?: number;
+  peBaseline?: number | null;
+  programId: ProgramId;
+}) {
+  const ratio = (a?: number | null, p?: number | null) =>
+    a != null && p != null && p !== 0 ? `${((a / p) * 100).toFixed(0)}%` : "—";
+  const peDelta = pe.total != null && peBaseline != null ? pe.total - peBaseline : null;
+  const axiomDelta =
+    axiomReform != null && axiomBaseline != null ? axiomReform - axiomBaseline : null;
+  const hasResult = pe.total != null;
+
+  return (
+    <div className="rounded-md border border-rule bg-paper-elev p-5">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
+        <div>
+          <div className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-accent">
+            Side-by-side · PolicyEngine · with this reform
+          </div>
+          <div className="mt-0.5 text-sm text-ink-secondary">
+            Same parametric reform applied to PE. Cached per slider combo this session.
+          </div>
+        </div>
+        <button
+          onClick={onRun}
+          disabled={running || !hasMapping}
+          className={`rounded-sm px-3 py-2 font-mono text-xs uppercase tracking-eyebrow transition ${
+            !hasMapping
+              ? "cursor-not-allowed bg-rule text-ink-muted"
+              : running
+                ? "cursor-wait bg-accent-hover text-white"
+                : "bg-accent text-white hover:bg-accent-hover"
+          }`}
+          title={
+            !hasMapping
+              ? "No PE parameter mapping for the moved sliders yet"
+              : "Run PolicyEngine with the same parametric reform"
+          }
+        >
+          {!hasMapping
+            ? "PE mapping not defined"
+            : running
+              ? `Running PE… ${elapsed?.toFixed(1)}s`
+              : hasResult ? "▶ Re-run PE on reform" : "▶ Run PE on reform"}
+        </button>
+      </div>
+
+      {pe.error && <ErrorBox>{pe.error}</ErrorBox>}
+
+      {(hasResult || running) && (
+        <div className="overflow-hidden rounded-sm border border-rule">
+          <table className="w-full border-collapse text-sm">
+            <thead className="bg-rule-subtle font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
+              <tr>
+                <th className="px-3 py-2 text-left">Metric</th>
+                <th className="px-3 py-2 text-right">Axiom</th>
+                <th className="px-3 py-2 text-right">PolicyEngine</th>
+                <th className="px-3 py-2 text-right">Axiom / PE</th>
+              </tr>
+            </thead>
+            <tbody className="font-mono text-sm">
+              <Row
+                metric="Reform total"
+                axiom={axiomReform != null ? fmtCurrency(axiomReform) : "—"}
+                pe={pe.total != null ? fmtCurrency(pe.total) : "—"}
+                ratio={ratio(axiomReform, pe.total)}
+              />
+              <Row
+                metric="Δ vs baseline"
+                axiom={axiomDelta != null ? fmtSignedCurrency(axiomDelta) : "—"}
+                pe={peDelta != null ? fmtSignedCurrency(peDelta) : "—"}
+                ratio={ratio(axiomDelta, peDelta)}
+              />
+              <Row
+                metric={programId === "co-snap" ? "Weighted recipients" : "Weighted units affected"}
+                axiom={"—"}
+                pe={pe.filers != null ? fmtCount(pe.filers) : "—"}
+                ratio={"—"}
+              />
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 

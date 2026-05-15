@@ -18,6 +18,13 @@ export type ProgramId = "co-snap" | "federal-income-tax" | "federal-ctc";
  *   Native shape for single parameters where humans think in dollars
  *   ("change CTC from $2,200 to $3,000 per child").
  */
+export interface PeOverride {
+  /** Dotted PE parameter path, e.g. "gov.irs.credits.ctc.amount.base". */
+  path: string;
+  /** Value to set; PE accepts numbers for scalar params. */
+  value: number;
+}
+
 export interface Lever {
   id: string;
   label: string;
@@ -34,6 +41,9 @@ export interface Lever {
   /** Currency symbol prefix for amount levers (default "$"). */
   unit?: string;
   build: (value: number) => Override[];
+  /** Optional translation to a PolicyEngine parameter override; lets the
+   *  same reform run on the PE side for side-by-side comparison. */
+  peBuild?: (value: number) => PeOverride[];
 }
 
 export interface Program {
@@ -87,6 +97,9 @@ const FEDERAL_CTC: Program = {
           formula: String(Math.round(v)),
         },
       ],
+      peBuild: (v) => [
+        { path: "gov.irs.credits.ctc.amount.base[0].amount", value: Math.round(v) },
+      ],
     },
     {
       id: "ctc_other_dependent_amount",
@@ -107,6 +120,7 @@ const FEDERAL_CTC: Program = {
           formula: String(Math.round(v)),
         },
       ],
+      peBuild: (v) => [{ path: "gov.irs.credits.ctc.amount.adult_dependent", value: Math.round(v) }],
     },
     {
       id: "ctc_joint_phase_out",
@@ -127,6 +141,9 @@ const FEDERAL_CTC: Program = {
           patch_kind: "set_formula",
           formula: String(Math.round(v)),
         },
+      ],
+      peBuild: (v) => [
+        { path: "gov.irs.credits.ctc.phase_out.threshold.JOINT", value: Math.round(v) },
       ],
     },
   ],

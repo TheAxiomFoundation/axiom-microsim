@@ -1,31 +1,30 @@
-"""Run CO SNAP over an :class:`EcpsBatch` via the dense engine.
+"""Run CO SNAP over an :class:`EcpsBatch` via the engine binary.
 
-Two execution paths:
+We were going to use the dense (columnar) entry point. CO SNAP's where-
+clauses reference derived values, which the dense compiler does not yet
+support. So this v1 batches every CO household into a single
+``CompiledExecutionRequest`` and shells out to the engine binary once.
 
-1. **Baseline.** Load the prebuilt ``co-snap.compiled.json`` artifact,
-   project the ECPS batch, call ``CompiledDenseProgram.execute``.
-2. **Reform.** Patch the rulespec tree on disk (``patch_rulespec``),
-   shell out to the engine binary to recompile (~70 ms), then load the
-   patched artifact and execute.
-
-Both return :class:`MicrosimResult` with weighted output arrays so the
-aggregation layer doesn't need to know which path produced them.
+For 413 CO households this lands in well under 5 s on a laptop. When the
+dense compiler grows derived-where support, we swap the inner call for a
+``CompiledDenseProgram.execute`` and the rest of the pipeline (project +
+aggregate) stays unchanged.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
 from ruamel.yaml import YAML
-
-from axiom_rules_engine.dense import CompiledDenseProgram, DenseRelationBatch
 
 from ..data.ecps_loader import EcpsBatch
 from ..project.co_snap import CoSnapProjection, project as project_co_snap
@@ -45,9 +44,23 @@ ENGINE_BIN = Path(
 )
 
 CO_SNAP_PROGRAM_REL = "policies/cdhs/snap/fy-2026-benefit-calculation.yaml"
+CO_SNAP_BASELINE_PROGRAM = RULES_US_CO_DIR / CO_SNAP_PROGRAM_REL
 CO_SNAP_BASELINE_ARTIFACT = ARTIFACTS_DIR / "co-snap.compiled.json"
+# Schema dump (input slots × dtypes × defaults) generated from the artifact
+# by axiom-co-snap. We need the full slot list because the engine demands
+# every input filled — there's no implicit "use the compiled default."
+CO_SNAP_BASE_SCHEMA = ARTIFACTS_DIR / "co-snap-base.json"
 
 CO_SNAP_RELATION_NAME = "us:statutes/7/2012/j#relation.member_of_household"
+
+# CO SNAP's compiled artifact carries schema name "co-snap.fy-2026" and
+# expects InputRecord.name in the synthetic-input form. Mirrors
+# `SYNTHETIC_INPUT_PREFIX` in axiom-co-snap/src/lib/programs/co-snap.ts.
+CO_SNAP_INPUT_PREFIX = "axiom:co-snap-fy-2026#input."
+
+
+def _input_id(slot: str) -> str:
+    return CO_SNAP_INPUT_PREFIX + slot
 
 
 # --- Reform overrides --------------------------------------------------------
@@ -74,12 +87,6 @@ class ParameterOverride:
 
 @dataclass
 class MicrosimResult:
-    """Engine output for one execution.
-
-    ``outputs[name]`` is an ndarray of length ``n_households`` (or
-    ``n_persons`` for person-level outputs).
-    """
-
     program: str
     state: str
     period_year: int
@@ -89,15 +96,19 @@ class MicrosimResult:
     outputs: dict[str, np.ndarray]
 
 
-# --- Public entry points -----------------------------------------------------
+# --- Public entry point ------------------------------------------------------
 
-DEFAULT_OUTPUTS: tuple[str, ...] = (
-    "snap_allotment",
-    "snap_regular_month_allotment",
-    "snap_maximum_allotment",
-    "snap_net_income_for_allotment",
-    "snap_income_eligible",
-)
+# Outputs we care about, by friendly name → absolute legal ID. The engine
+# accepts either the absolute id in the request and returns it back; the
+# friendly-name layer here keeps callers (CLI, server, aggregators) from
+# having to know about RuleSpec coordinates.
+DEFAULT_OUTPUT_IDS: dict[str, str] = {
+    "snap_allotment": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_allotment",
+    "snap_regular_month_allotment": "us:statutes/7/2017/a#snap_regular_month_allotment",
+    "snap_maximum_allotment": "us:policies/usda/snap/fy-2026-cola/maximum-allotments#snap_maximum_allotment",
+    "snap_net_income_for_allotment": "us:statutes/7/2017/a#snap_net_income_for_allotment",
+}
+DEFAULT_OUTPUTS: tuple[str, ...] = tuple(DEFAULT_OUTPUT_IDS)
 
 
 def run_co_snap(
@@ -107,19 +118,13 @@ def run_co_snap(
     overrides: list[ParameterOverride] | None = None,
     outputs: tuple[str, ...] = DEFAULT_OUTPUTS,
 ) -> MicrosimResult:
-    """Run CO SNAP over a state-filtered ECPS batch.
-
-    With no overrides, the prebuilt baseline artifact is used. With
-    overrides, the rulespec is patched and recompiled per call.
-    """
     projection = project_co_snap(batch, period_year=period_year)
-    artifact_path = (
-        CO_SNAP_BASELINE_ARTIFACT if not overrides else _compile_with_overrides(overrides)
-    )
+    artifact_path, scratch = _artifact_for(overrides)
     try:
-        result = _execute(projection, artifact_path, period_year=period_year, outputs=outputs)
+        out = _execute_compiled(projection, artifact_path, period_year, outputs)
     finally:
-        if overrides and artifact_path != CO_SNAP_BASELINE_ARTIFACT:
+        if scratch is not None:
+            shutil.rmtree(scratch, ignore_errors=True)
             artifact_path.unlink(missing_ok=True)
 
     return MicrosimResult(
@@ -129,89 +134,234 @@ def run_co_snap(
         n_households=batch.n_households,
         n_persons=batch.n_persons,
         household_weight=batch.household_weight,
-        outputs=result,
+        outputs=out,
     )
 
 
-# --- Internals ---------------------------------------------------------------
+# --- Schema (input slots + defaults) ----------------------------------------
 
-def _execute(
-    projection: CoSnapProjection,
-    artifact_path: Path,
-    *,
-    period_year: int,
-    outputs: tuple[str, ...],
-) -> dict[str, np.ndarray]:
-    if not artifact_path.exists():
+@dataclass
+class _SlotSpec:
+    name: str
+    dtype: str          # "bool" | "integer" | "decimal" | "date"
+    default: object
+
+
+def _load_schema() -> tuple[list[_SlotSpec], list[_SlotSpec]]:
+    if not CO_SNAP_BASE_SCHEMA.exists():
         raise FileNotFoundError(
-            f"Compiled CO SNAP artifact not found at {artifact_path}. "
-            f"Run scripts/compile_programs.sh first."
+            f"CO SNAP schema dump missing at {CO_SNAP_BASE_SCHEMA}. Copy it from "
+            f"axiom-co-snap/engine/artifacts/co-snap-base.json."
         )
-    program = CompiledDenseProgram.from_file(str(artifact_path), entity="Household")
-
-    relations = {
-        CO_SNAP_RELATION_NAME: DenseRelationBatch(
-            offsets=projection.relation_offsets,
-            inputs=projection.person_inputs,
-        )
-    }
-    raw = program.execute(
-        period_kind="year",
-        start=f"{period_year}-01",
-        end=f"{period_year}-12",
-        inputs=projection.household_inputs,
-        relations=relations,
-        outputs=list(outputs),
-    )
-    # The native binding returns a dict-of-list / dict-of-DenseOutputValue.
-    # Normalise to numpy arrays.
-    return {name: _to_numpy(values) for name, values in raw.get("outputs", raw).items()}
+    schema = json.loads(CO_SNAP_BASE_SCHEMA.read_text())
+    hh = [_SlotSpec(s["name"], s["dtype"], s["default"]) for s in schema["household_inputs"]]
+    pe = [_SlotSpec(s["name"], s["dtype"], s["default"]) for s in schema["person_inputs"]]
+    return hh, pe
 
 
-def _to_numpy(value: object) -> np.ndarray:
-    if isinstance(value, np.ndarray):
-        return value
-    if isinstance(value, list):
-        return np.asarray(value)
-    if isinstance(value, dict):
-        # DenseOutputValue may serialise as {"values": [...], "dtype": "..."}
-        if "values" in value:
-            return np.asarray(value["values"])
-    raise TypeError(f"unexpected dense output type: {type(value)}")
+_HH_SLOTS: list[_SlotSpec] | None = None
+_PERSON_SLOTS: list[_SlotSpec] | None = None
 
 
-def _compile_with_overrides(overrides: list[ParameterOverride]) -> Path:
-    """Patch rulespec tree, shell out to the engine to recompile, return path."""
+def _slots() -> tuple[list[_SlotSpec], list[_SlotSpec]]:
+    global _HH_SLOTS, _PERSON_SLOTS
+    if _HH_SLOTS is None or _PERSON_SLOTS is None:
+        _HH_SLOTS, _PERSON_SLOTS = _load_schema()
+    return _HH_SLOTS, _PERSON_SLOTS
+
+
+# --- Compile / patch ---------------------------------------------------------
+
+def _artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path | None]:
+    """Return ``(artifact_path, scratch_to_clean_or_None)``."""
+    if not overrides:
+        if not CO_SNAP_BASELINE_ARTIFACT.exists():
+            _compile(CO_SNAP_BASELINE_PROGRAM, CO_SNAP_BASELINE_ARTIFACT)
+        return CO_SNAP_BASELINE_ARTIFACT, None
+
     if not RULES_US_DIR.exists() or not RULES_US_CO_DIR.exists():
         raise FileNotFoundError(
             f"Rulespec dirs missing — expected {RULES_US_DIR} and {RULES_US_CO_DIR}. "
-            "Run scripts/compile_programs.sh once to clone them."
+            "Run scripts/setup_engine.sh once."
         )
-
     scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-"))
-    try:
-        dst_us = scratch / "rules-us"
-        dst_us_co = scratch / "rules-us-co"
-        # symlinks=False so writes don't pierce the source tree.
-        shutil.copytree(RULES_US_DIR, dst_us, symlinks=False)
-        shutil.copytree(RULES_US_CO_DIR, dst_us_co, symlinks=False)
+    dst_us = scratch / "rules-us"
+    dst_us_co = scratch / "rules-us-co"
+    shutil.copytree(RULES_US_DIR, dst_us, symlinks=False)
+    shutil.copytree(RULES_US_CO_DIR, dst_us_co, symlinks=False)
+    for ov in overrides:
+        target = (dst_us if ov.repo == "rules-us" else dst_us_co) / ov.file_relative
+        _patch_yaml(target, ov)
 
-        for ov in overrides:
-            file_path = (dst_us if ov.repo == "rules-us" else dst_us_co) / ov.file_relative
-            _patch_yaml(file_path, ov)
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    out = ARTIFACTS_DIR / f".tmp-{scratch.name}.compiled.json"
+    _compile(dst_us_co / CO_SNAP_PROGRAM_REL, out)
+    return out, scratch
 
-        program_path = dst_us_co / CO_SNAP_PROGRAM_REL
-        out = ARTIFACTS_DIR / f".tmp-{scratch.name}.compiled.json"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            [str(ENGINE_BIN), "compile", "--program", str(program_path), "--output", str(out)],
-            check=True,
-            capture_output=True,
+
+def _compile(program_yaml: Path, output_json: Path) -> None:
+    if not ENGINE_BIN.exists():
+        raise FileNotFoundError(
+            f"Engine binary missing at {ENGINE_BIN}. Run scripts/setup_engine.sh once."
         )
-        return out
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
+    subprocess.run(
+        [str(ENGINE_BIN), "compile", "--program", str(program_yaml), "--output", str(output_json)],
+        check=True, capture_output=True,
+    )
 
+
+# --- Execute -----------------------------------------------------------------
+
+def _execute_compiled(
+    projection: CoSnapProjection,
+    artifact_path: Path,
+    period_year: int,
+    output_names: tuple[str, ...],
+) -> dict[str, np.ndarray]:
+    output_ids = [DEFAULT_OUTPUT_IDS[n] for n in output_names]
+    request = _build_compiled_request(projection, period_year, output_ids)
+    proc = subprocess.run(
+        [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
+        input=json.dumps(request), text=True, capture_output=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"engine failed:\n{proc.stderr.strip()}")
+    response = json.loads(proc.stdout)
+    id_to_name = {DEFAULT_OUTPUT_IDS[n]: n for n in output_names}
+    return _collect_outputs(response, projection.n_households, output_names, id_to_name)
+
+
+def _build_compiled_request(
+    proj: CoSnapProjection,
+    period_year: int,
+    output_ids: list[str],
+) -> dict:
+    # SNAP is calculated monthly. Use January of the requested year as the
+    # representative month — the run is interpreted as "what would each
+    # household receive in this month under current rules."
+    interval = {"start": f"{period_year}-01-01", "end": f"{period_year}-01-31"}
+    period = {
+        "period_kind": "month",
+        "start": f"{period_year}-01-01",
+        "end": f"{period_year}-01-31",
+    }
+
+    inputs: list[dict] = []
+    relations: list[dict] = []
+    queries: list[dict] = []
+
+    hh_slots, person_slots = _slots()
+
+    # Household-level inputs. The engine requires every slot in the schema
+    # to be supplied; for those we have ECPS data for, use the projected
+    # value, otherwise fall back to the slot's compiled default.
+    for h_idx in range(proj.n_households):
+        hh_id = f"h{h_idx}"
+        for slot in hh_slots:
+            value = (
+                proj.household_inputs[slot.name][h_idx]
+                if slot.name in proj.household_inputs
+                else slot.default
+            )
+            inputs.append(_input_record(_input_id(slot.name), "Household", hh_id, interval, value))
+        queries.append({
+            "entity_id": hh_id,
+            "period": period,
+            "outputs": output_ids,
+        })
+
+    # Person-level inputs + member_of_household relations.
+    person_to_hh = np.searchsorted(proj.relation_offsets, np.arange(proj.n_persons), side="right") - 1
+    for p_idx in range(proj.n_persons):
+        person_id = f"p{p_idx}"
+        hh_id = f"h{int(person_to_hh[p_idx])}"
+        for slot in person_slots:
+            value = (
+                proj.person_inputs[slot.name][p_idx]
+                if slot.name in proj.person_inputs
+                else slot.default
+            )
+            inputs.append(_input_record(_input_id(slot.name), "Person", person_id, interval, value))
+        relations.append({
+            "name": CO_SNAP_RELATION_NAME,
+            "tuple": [person_id, hh_id],
+            "interval": interval,
+        })
+
+    return {
+        "mode": "fast",
+        "dataset": {"inputs": inputs, "relations": relations},
+        "queries": queries,
+    }
+
+
+def _input_record(name: str, entity: str, entity_id: str, interval: dict, value) -> dict:
+    return {
+        "name": name,
+        "entity": entity,
+        "entity_id": entity_id,
+        "interval": interval,
+        "value": _scalar_value(value),
+    }
+
+
+def _scalar_value(value) -> dict:
+    """Encode a numpy / python scalar as the engine's tagged scalar JSON."""
+    # Order matters: bool must come before int (numpy's bool is also int).
+    if isinstance(value, (np.bool_, bool)):
+        return {"kind": "bool", "value": bool(value)}
+    if isinstance(value, (np.integer,)):
+        return {"kind": "integer", "value": int(value)}
+    if isinstance(value, int):
+        return {"kind": "integer", "value": value}
+    if isinstance(value, np.datetime64):
+        return {"kind": "date", "value": str(value.astype("datetime64[D]"))}
+    if isinstance(value, date):
+        return {"kind": "date", "value": value.isoformat()}
+    if isinstance(value, (np.floating, float)):
+        return {"kind": "decimal", "value": f"{float(value):.6f}"}
+    if isinstance(value, str):
+        # Defaults like "2026-01-01" come through as strings; keep the kind
+        # consistent with the slot dtype when we know it. For now treat any
+        # 10-char ISO date as date, otherwise text.
+        if len(value) == 10 and value[4] == "-" and value[7] == "-":
+            return {"kind": "date", "value": value}
+        return {"kind": "text", "value": value}
+    raise TypeError(f"unsupported scalar type {type(value)} ({value!r})")
+
+
+def _collect_outputs(
+    response: dict,
+    n_households: int,
+    output_names: tuple[str, ...],
+    id_to_name: dict[str, str],
+) -> dict[str, np.ndarray]:
+    arrays = {name: np.zeros(n_households, dtype=np.float64) for name in output_names}
+
+    for query_result in response["results"]:
+        entity_id = query_result["entity_id"]
+        if not entity_id.startswith("h"):
+            continue
+        h_idx = int(entity_id[1:])
+        for key, out in query_result["outputs"].items():
+            # Engine echoes the absolute id back as the dict key.
+            name = id_to_name.get(key, key)
+            if name not in arrays:
+                continue
+            if out["kind"] == "scalar":
+                v = out["value"]
+                if v["kind"] in ("decimal", "integer"):
+                    arrays[name][h_idx] = float(v["value"])
+                elif v["kind"] == "bool":
+                    arrays[name][h_idx] = 1.0 if v["value"] else 0.0
+            elif out["kind"] == "judgment":
+                arrays[name][h_idx] = {"holds": 1.0, "not_holds": 0.0, "undetermined": -1.0}[
+                    out["outcome"]
+                ]
+    return arrays
+
+
+# --- YAML patching -----------------------------------------------------------
 
 def _patch_yaml(path: Path, override: ParameterOverride) -> None:
     yaml = YAML()
@@ -219,8 +369,7 @@ def _patch_yaml(path: Path, override: ParameterOverride) -> None:
     with path.open() as f:
         doc = yaml.load(f)
 
-    rules = doc.get("rules", [])
-    rule = next((r for r in rules if r.get("name") == override.parameter), None)
+    rule = next((r for r in doc.get("rules", []) if r.get("name") == override.parameter), None)
     if rule is None:
         raise KeyError(f"parameter {override.parameter!r} not in {path}")
     versions = rule.get("versions") or []
@@ -238,14 +387,11 @@ def _patch_yaml(path: Path, override: ParameterOverride) -> None:
         for k, v in (override.values or {}).items():
             version["values"][k] = v
     elif override.patch_kind == "scale_formula":
-        if "formula" not in version:
-            raise ValueError(f"{override.parameter} has no formula to scale")
         try:
             n = float(str(version["formula"]))
-        except ValueError as exc:
+        except (KeyError, ValueError) as exc:
             raise ValueError(
-                f"scale_formula only supports numeric literals; "
-                f"{override.parameter} = {version['formula']!r}"
+                f"scale_formula needs a numeric-literal formula on {override.parameter}"
             ) from exc
         version["formula"] = str(round(n * (override.multiplier or 1.0), 2))
     elif override.patch_kind == "set_formula":

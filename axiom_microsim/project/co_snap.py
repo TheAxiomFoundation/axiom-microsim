@@ -71,7 +71,11 @@ def project(batch: EcpsBatch, *, period_year: int = 2026) -> CoSnapProjection:
     employment = batch.person_columns["employment_income_before_lsr"][sort].astype(np.float64)
     self_emp = batch.person_columns["self_employment_income_before_lsr"][sort].astype(np.float64)
 
-    # CO SNAP wants weekly wages, not annual. ECPS reports annual.
+    # `member_weekly_wages` is a per-person work-requirement input (used to
+    # judge whether someone meets the 30-hr work threshold), NOT the income
+    # the gross-income test reads. The household-level monthly earnings
+    # slot is `employee_wages_received`; we populate that below from the
+    # per-person annual earnings.
     weekly_wages = (employment + self_emp) / 52.0
 
     elderly_or_disabled = (age >= 60) | is_disabled
@@ -102,6 +106,43 @@ def project(batch: EcpsBatch, *, period_year: int = 2026) -> CoSnapProjection:
     )
     monthly_shelter = (annual_rent_sum / 12.0).round().astype(np.int64)
 
+    # Household monthly earnings: sum person-level annual earnings / 12.
+    # `employee_wages_received` is the slot CO SNAP's gross-income test
+    # reads. PE earnings columns are annual; SNAP is monthly.
+    annual_earnings = sum_person_to_household(
+        batch.person_columns["employment_income_before_lsr"],
+        batch.person_household_index,
+        batch.n_households,
+    ) + sum_person_to_household(
+        batch.person_columns["self_employment_income_before_lsr"],
+        batch.person_household_index,
+        batch.n_households,
+    )
+    monthly_earnings = (annual_earnings / 12.0).round().astype(np.int64)
+
+    # Household monthly unearned income → `assistance_payments` slot.
+    # Pensions, interest, dividends, rental, alimony — all PE annual.
+    unearned_columns = (
+        "taxable_pension_income",
+        "tax_exempt_pension_income",
+        "taxable_interest_income",
+        "tax_exempt_interest_income",
+        "qualified_dividend_income",
+        "non_qualified_dividend_income",
+        "rental_income",
+        "alimony_income",
+        "miscellaneous_income",
+    )
+    annual_unearned = np.zeros(batch.n_households, dtype=np.float64)
+    for col in unearned_columns:
+        if col in batch.person_columns:
+            annual_unearned += sum_person_to_household(
+                batch.person_columns[col],
+                batch.person_household_index,
+                batch.n_households,
+            )
+    monthly_unearned = (annual_unearned / 12.0).round().astype(np.int64)
+
     # Utility flags: until we encode utility-cost data per household we
     # take the conservative side that lets the standard utility allowance
     # (SUA) apply. Flagged in DECISIONS.md as a v2 refinement.
@@ -118,6 +159,8 @@ def project(batch: EcpsBatch, *, period_year: int = 2026) -> CoSnapProjection:
         "household_incurred_or_anticipated_heating_or_cooling_costs_separate_from_rent_or_mortgage": has_heating_cooling,
         "household_pays_electricity_utility_cost": pays_electricity,
         "application_date": application_date,
+        "employee_wages_received": monthly_earnings,
+        "assistance_payments": monthly_unearned,
     }
 
     return CoSnapProjection(

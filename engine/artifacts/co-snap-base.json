@@ -1,0 +1,2990 @@
+{
+  "schema": "co-snap.fy-2026",
+  "household_inputs": [
+    {
+      "name": "actual_documented_boarder_room_and_meal_costs",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "all_household_members_experiencing_homelessness",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "allowable_self_employment_business_costs_for_period",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "anticipated_capital_gains_next_12_months",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "anticipated_monthly_allowable_self_employment_business_costs",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "anticipated_monthly_self_employment_income",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "application_date",
+      "dtype": "date",
+      "default": "2026-01-01"
+    },
+    {
+      "name": "assistance_payments",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "available_trust_dividends",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "average_monthly_child_support_paid",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "average_rental_property_management_hours_per_week",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "battered_shelter_resident",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "boarder_income_is_foster_care_payment",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "boarder_payments_for_room_meals_and_shelter_contributions",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "bona_fide_prepaid_funeral_agreement",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "break_in_participation_days",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "capital_goods_services_or_property_sale_proceeds_connected_to_self_employment",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "child_support_payment_history_months",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "child_support_payment_verified",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "current_household_income",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "dependent_care_expense_necessary_for_work_or_training",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "dependent_care_expenses_paid",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "dependent_care_reimbursed_or_paid_by_other_program",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "direct_support_and_alimony_payments",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "earned_income_excluding_boarder_net_income",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "earned_income_tax_credit_resource_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "eitc_recipient_was_participating_in_snap_when_eitc_received",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "employee_wages_received",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "estimated_monthly_child_support_paid",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "estimated_return_after_sale_costs_and_ownership_share",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "farm_self_employment_property_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "farm_self_employment_terminated",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "federal_eitc_received_in_current_or_following_month",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "federal_eitc_resource_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "federal_income_tax_refund_received_on_or_after_2010_01_01",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "federal_income_tax_refund_resource_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "federal_tax_preferred_retirement_account_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "garnished_or_diverted_wages_for_household_expenses",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "gifts_from_other_sources",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "gifts_from_other_sources_can_be_anticipated",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "higher_education_state_work_study_or_work_requirement_fellowship_income",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "home_and_surrounding_property_owned_or_purchased",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "home_and_surrounding_property_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "homeless_household_free_shelter_all_month",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "homeless_household_has_shelter_costs",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "household_contains_individual_participating_in_more_than_one_household_or_project_area",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "household_goods_personal_effects_life_insurance_and_exempt_livestock_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "household_has_striking_member",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "household_in_project_area_solely_for_vacation",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "household_incurred_or_anticipated_heating_or_cooling_costs_separate_from_rent_or_mortgage",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "household_intends_to_build_permanent_home_on_property",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "household_lives_in_application_state",
+      "dtype": "bool",
+      "default": true
+    },
+    {
+      "name": "household_llc_s_corporation_owner_earned_income",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "household_member_allocated_lottery_or_gambling_winnings",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "household_member_cannot_revoke_trust_or_change_beneficiary",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "household_member_use_resource_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "household_occupies_home",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "household_pays_cooking_fuel_utility_cost",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "household_pays_electricity_utility_cost",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "household_pays_sewer_utility_cost",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "household_pays_telephone_service_cost",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "household_pays_trash_utility_cost",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "household_pays_water_utility_cost",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "household_received_leap_or_e_ebt_payment_within_previous_12_months",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "household_shares_residence_and_pays_portion_of_heating_or_cooling_cost",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "household_shelter_costs_incurred",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "household_size",
+      "dtype": "integer",
+      "default": 1
+    },
+    {
+      "name": "household_training_allowance_earned_income",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "household_vehicle_resource_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "household_vista_or_title_i_domestic_volunteer_earned_income",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "household_wioa_ojt_earned_income",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "inaccessible_former_household_resource_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "inaccessible_resource_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "income_producing_property_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "initial_application_month",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "installment_contract_and_secured_property_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "installment_contract_produces_income_consistent_with_fair_market_value",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "irregular_heating_or_cooling_costs_between_billing_periods",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "liquid_resource_current_redemption_rate",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "liquid_resource_encumbrances",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "migrant_or_seasonal_farmworker_household_in_job_stream",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "months_since_eitc_received",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "months_since_farm_self_employment_terminated",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "months_since_federal_income_tax_refund_received",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "no_significant_return_resource_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "non_liquid_resource_condition_adjustment",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "non_liquid_resource_market_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "non_liquid_resource_net_return_if_sold",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "non_liquid_resource_verified_encumbrances",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "non_striking_household_members_current_income",
+      "dtype": "decimal",
+      "default": 0
+    },
+    {
+      "name": "nonexempt_transferred_resources",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "nonprofit_gifts_received_in_fiscal_quarter",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "number_of_boarders",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "other_countable_resources",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "other_gain_or_benefit_payments",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "other_household_resource_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "person_still_employed_when_sick_vacation_or_bonus_pay_received",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "prepaid_funeral_agreement_equity_value_excluding_burial_plot",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "private_rental_housing_landlord_bills_heating_or_cooling_separately",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "property_produces_annual_income_consistent_with_fair_market_value",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "prorated_income_resource_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "prorated_income_still_being_counted_as_income",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "public_housing_responsible_for_excess_heating_or_cooling_costs",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "public_institution_joint_ssi_snap_application_before_release",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "public_institution_release_date",
+      "dtype": "date",
+      "default": "2026-01-01"
+    },
+    {
+      "name": "real_property_actual_value_reported_by_county_assessor",
+      "dtype": "bool",
+      "default": true
+    },
+    {
+      "name": "real_property_amount_owed",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "real_property_assessment_percentage_rate",
+      "dtype": "integer",
+      "default": 1
+    },
+    {
+      "name": "real_property_county_assessor_actual_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "real_property_current_assessed_valuation",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "real_property_good_faith_sale_effort",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "reasonably_anticipated_wage_advances_received",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "rental_property_business_costs",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "rental_property_gross_income",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "resident_of_battered_women_and_children_shelter_and_prior_abusive_household_member",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "resource_access_depends_on_abusive_former_household_member",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "resource_cash_value_not_accessible_to_household",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "resource_exclusion_applies_because_used_by_or_for_household_member_or_counted_disqualified_person",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "resource_in_probate_or_sale_barred_by_lien",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "resource_is_negotiable_financial_instrument",
+      "dtype": "bool",
+      "default": true
+    },
+    {
+      "name": "resource_transfer_by_counted_person_within_review_period",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "resource_transferred_knowingly_to_qualify_for_snap",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "resources_transferred_between_same_household_members",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "retirement_disability_payments",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "self_employment_capital_gains_for_period",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "self_employment_gross_income_for_period",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "self_employment_income_calculated_on_anticipated_basis",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "self_employment_income_period_months",
+      "dtype": "integer",
+      "default": 1
+    },
+    {
+      "name": "shelter_expenses_paid_directly_by_boarder_to_third_party",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "sick_vacation_or_bonus_pay_received",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "snap_basic_categorical_eligible",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "snap_expanded_categorical_eligible",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "snap_participation_continues_or_temporary_nonparticipation_is_administrative",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "specific_purpose_or_federally_excluded_government_payment_resource_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "sponsor_income_deemed_to_household",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "sponsor_total_resources",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "sponsored_noncitizen_household",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "striking_member_current_income",
+      "dtype": "decimal",
+      "default": 0
+    },
+    {
+      "name": "striking_member_pre_strike_income",
+      "dtype": "decimal",
+      "default": 0
+    },
+    {
+      "name": "substantial_lottery_or_gambling_winnings_received",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "tax_deferred_education_account_value",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "temporary_absence_for_allowed_reason_with_intent_to_return",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "total_medical_expenses",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "transfer_reason_other_than_snap_qualification",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "transferred_resources_sold_or_traded_at_or_near_fair_market_value",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "transferred_resources_would_not_affect_eligibility",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "trust_arrangement_will_not_likely_cease_during_certification_period",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "trust_fund_withdrawals",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "trust_funds_are_for_allowed_investment_education_or_medical_purpose_or_from_nonhousehold_member",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "trust_investments_do_not_assist_household_controlled_business",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "trustee_is_independent_or_court_limited",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "vacation_sick_or_bonus_pay",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "vacation_sick_or_bonus_pay_after_terminated_employment",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "vacation_sick_or_bonus_pay_received_as_lump_sum",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "vacation_sick_or_bonus_pay_received_in_installments",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "verified_higher_homeless_shelter_costs",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "wages_held_at_employee_request_that_would_have_been_paid",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "wages_previously_withheld_by_employer_general_practice_received",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "work_supplementation_earned_income",
+      "dtype": "integer",
+      "default": 0
+    }
+  ],
+  "person_inputs": [
+    {
+      "name": "adequate_child_care_unavailable_to_attend_class_and_meet_student_work_requirement",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "alaska_subsistence_hunts_or_fishes_30_hours_weekly",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "alien_status_documentation_missing_or_unwilling",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "assigned_or_placed_in_higher_education_through_qualifying_employment_training_program",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "co_resident_gross_income",
+      "dtype": "decimal",
+      "default": 0
+    },
+    {
+      "name": "elderly_disabled_person_unable_to_purchase_and_prepare_meals",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "enrolled_at_least_half_time",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "enrolled_in_business_technical_trade_or_vocational_school_requiring_high_school_diploma",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "enrolled_in_college_or_university_degree_program",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "enrolled_through_jobs_or_successor_program",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "federal_minimum_wage",
+      "dtype": "decimal",
+      "default": 0
+    },
+    {
+      "name": "federal_or_state_minimum_wage",
+      "dtype": "decimal",
+      "default": 0
+    },
+    {
+      "name": "known_student_refused_work_study_assignment",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "llc_s_corporation_business_expenses",
+      "dtype": "decimal",
+      "default": 0
+    },
+    {
+      "name": "llc_s_corporation_business_income",
+      "dtype": "decimal",
+      "default": 0
+    },
+    {
+      "name": "llc_s_corporation_owner_receives_draw",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "llc_s_corporation_owner_salary",
+      "dtype": "decimal",
+      "default": 0
+    },
+    {
+      "name": "member_abawd_monthly_work_hours",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "member_abawd_weekly_work_hours",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "member_accepted_bona_fide_suitable_employment_offer_if_offered",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_age",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "member_age_16_or_17_is_not_household_head_or_attends_school_or_training_half_time",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_age_24_or_younger_and_was_in_foster_care_on_attaining_age_18",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_combines_work_and_work_program_20_hours_weekly",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_covered_by_abawd_time_limit_waiver",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_has_additional_three_month_abawd_eligibility",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_has_deportation_or_removal_withheld",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_has_eligible_military_connection",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_is_amerasian_immigrant",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_is_american_indian_born_in_canada_or_recognized_indian_tribe_member",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_is_asylee",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_is_cuban_or_haitian_entrant",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_is_hmong_or_highland_laotian_qualifying_person_or_family_member",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_is_homeless",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_is_parent_of_household_member_under_age_eighteen",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_is_pregnant",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_is_qualified_alien_subject_to_five_year_wait",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_is_qualified_alien_with_forty_qualifying_quarters",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_is_refugee",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_is_trafficking_victim_or_qualifying_family_member",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_is_under_age_eighteen",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_is_us_citizen",
+      "dtype": "bool",
+      "default": true
+    },
+    {
+      "name": "member_is_us_noncitizen_national",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_is_veteran",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_medically_certified_physically_or_mentally_unfit_for_employment",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_participated_in_snap_et_if_assigned",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_participated_in_workfare_if_assigned",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_participates_in_abawd_work_program_20_hours_weekly",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_participates_in_abawd_workfare_program",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_physically_or_mentally_unfit_for_employment",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_provided_employment_status_or_availability_information",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_receives_blindness_or_disability_benefits",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_receiving_or_applying_for_unemployment_compensation_and_complying",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_regained_abawd_eligibility",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_registered_for_work_or_registered_by_state",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_regular_participant_in_drug_or_alcohol_treatment",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_reported_to_referred_suitable_employer_if_referred",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_resides_with_household_member_under_age_eighteen",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_responsible_for_dependent_child_under_six_or_incapacitated_person",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_snap_work_requirements_waived_due_to_pending_ssi_joint_application",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_student_enrolled_at_least_half_time_and_student_eligible",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_subject_to_and_complying_with_title_iv_work_requirement",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_voluntarily_quit_or_reduced_work_below_30_hours_without_good_cause",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_was_lawfully_residing_on_1996_08_22_and_born_on_or_before_1931_08_22",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "member_weekly_wages",
+      "dtype": "decimal",
+      "default": 0
+    },
+    {
+      "name": "member_weekly_work_hours",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "migrant_or_seasonal_farmworker_under_contract_to_begin_employment_within_30_days",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "qualified_alien_five_year_status_period_met",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "responsible_for_care_of_dependent_child_under_twelve",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "responsible_for_care_of_dependent_household_member_age_six_to_under_twelve",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "responsible_for_care_of_dependent_household_member_under_age_six",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "single_parent_enrolled_full_time_in_higher_education",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "single_parent_household_condition_satisfied",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "snap_abawd_countable_months_in_three_year_period",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "snap_member_is_elderly_or_disabled",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "snap_vista_income_exclusion",
+      "dtype": "decimal",
+      "default": 0
+    },
+    {
+      "name": "snap_wioa_payment_exclusion",
+      "dtype": "decimal",
+      "default": 0
+    },
+    {
+      "name": "state_agency_averaged_student_work_hours_meet_twenty_per_week",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "student_age",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "student_anticipates_working_in_work_study",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "student_currently_being_trained_by_employer",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "student_paid_employment_hours_per_week",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "student_participating_in_on_the_job_training_program",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "student_participating_in_state_or_federally_financed_work_study",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "student_physically_or_mentally_unfit",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "student_receives_tanf",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "student_self_employment_hours_per_week",
+      "dtype": "integer",
+      "default": 0
+    },
+    {
+      "name": "student_self_employment_weekly_earnings",
+      "dtype": "decimal",
+      "default": 0
+    },
+    {
+      "name": "training_allowance_amount",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "training_allowance_is_reimbursement",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "training_allowance_paid_under_wioa",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "vista_or_title_i_domestic_volunteer_payment_amount",
+      "dtype": "decimal",
+      "default": 0
+    },
+    {
+      "name": "vocational_rehabilitation_training_allowance_from_government_program",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "wioa_on_the_job_training_earnings_amount",
+      "dtype": "decimal",
+      "default": 0
+    },
+    {
+      "name": "work_study_approved_at_snap_application",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "work_study_approved_for_school_term",
+      "dtype": "bool",
+      "default": false
+    },
+    {
+      "name": "work_study_exemption_period_active",
+      "dtype": "bool",
+      "default": false
+    }
+  ],
+  "relations": [
+    "us:statutes/7/2012/j#relation.member_of_household"
+  ],
+  "outputs_by_name": {
+    "snap_maximum_allotment": "us:policies/usda/snap/fy-2026-cola/maximum-allotments#snap_maximum_allotment",
+    "snap_one_person_thrifty_food_plan_cost": "us:policies/usda/snap/fy-2026-cola/maximum-allotments#snap_one_person_thrifty_food_plan_cost",
+    "snap_household_has_elderly_or_disabled_member": "us:statutes/7/2012/j#snap_household_has_elderly_or_disabled_member",
+    "snap_standard_deduction_48_states_dc": "us:policies/usda/snap/fy-2026-cola/deductions#snap_standard_deduction_48_states_dc",
+    "snap_standard_deduction": "us:policies/usda/snap/fy-2026-cola/deductions#snap_standard_deduction",
+    "snap_asset_limit": "us:policies/usda/snap/fy-2026-cola/deductions#snap_asset_limit",
+    "snap_net_income_limit_100_percent_fpl_48_states_dc": "us:policies/usda/snap/fy-2026-cola/income-eligibility-standards#snap_net_income_limit_100_percent_fpl_48_states_dc",
+    "snap_gross_income_limit_130_percent_fpl_48_states_dc": "us:policies/usda/snap/fy-2026-cola/income-eligibility-standards#snap_gross_income_limit_130_percent_fpl_48_states_dc",
+    "snap_gross_income_limit_165_percent_fpl_48_states_dc": "us:policies/usda/snap/fy-2026-cola/income-eligibility-standards#snap_gross_income_limit_165_percent_fpl_48_states_dc",
+    "snap_duplicate_participation_exception_applies": "us:regulations/7-cfr/273/3#snap_duplicate_participation_exception_applies",
+    "snap_household_duplicate_participation_barred": "us:regulations/7-cfr/273/3#snap_household_duplicate_participation_barred",
+    "snap_household_state_resident": "us:regulations/7-cfr/273/3#snap_household_state_resident",
+    "snap_household_residency_eligible": "us:regulations/7-cfr/273/3#snap_household_residency_eligible",
+    "snap_earned_income_subject_to_deduction": "us:statutes/7/2014/e/2#snap_earned_income_subject_to_deduction",
+    "snap_earned_income_deduction": "us:statutes/7/2014/e/2#snap_earned_income_deduction",
+    "snap_net_income_pre_shelter": "us:statutes/7/2014/e/6/A#snap_net_income_pre_shelter",
+    "snap_net_income": "us:statutes/7/2014/e/6/A#snap_net_income",
+    "snap_net_income_for_allotment": "us:statutes/7/2017/a#snap_net_income_for_allotment",
+    "snap_household_food_contribution": "us:statutes/7/2017/a#snap_household_food_contribution",
+    "snap_allotment_before_minimum": "us:statutes/7/2017/a#snap_allotment_before_minimum",
+    "snap_minimum_monthly_allotment": "us:statutes/7/2017/a#snap_minimum_monthly_allotment",
+    "snap_regular_month_allotment": "us:statutes/7/2017/a#snap_regular_month_allotment",
+    "snap_boarder_income": "us-co:regulations/10-ccr-2506-1/4.403.2#snap_boarder_income",
+    "snap_boarder_room_and_meals_cost_basis": "us-co:regulations/10-ccr-2506-1/4.403.2#snap_boarder_room_and_meals_cost_basis",
+    "snap_boarder_cost_of_doing_business": "us-co:regulations/10-ccr-2506-1/4.403.2#snap_boarder_cost_of_doing_business",
+    "snap_boarder_net_self_employment_income": "us-co:regulations/10-ccr-2506-1/4.403.2#snap_boarder_net_self_employment_income",
+    "snap_earned_income_including_boarder_net_income": "us-co:regulations/10-ccr-2506-1/4.403.2#snap_earned_income_including_boarder_net_income",
+    "snap_shelter_costs_excluding_boarder_direct_third_party_payments": "us-co:regulations/10-ccr-2506-1/4.403.2#snap_shelter_costs_excluding_boarder_direct_third_party_payments",
+    "snap_self_employment_period_gross_income": "us-co:regulations/10-ccr-2506-1/4.403.11#snap_self_employment_period_gross_income",
+    "snap_self_employment_period_net_income": "us-co:regulations/10-ccr-2506-1/4.403.11#snap_self_employment_period_net_income",
+    "snap_average_monthly_self_employment_income": "us-co:regulations/10-ccr-2506-1/4.403.11#snap_average_monthly_self_employment_income",
+    "snap_anticipated_monthly_capital_gains": "us-co:regulations/10-ccr-2506-1/4.403.11#snap_anticipated_monthly_capital_gains",
+    "snap_anticipated_monthly_net_self_employment_income": "us-co:regulations/10-ccr-2506-1/4.403.11#snap_anticipated_monthly_net_self_employment_income",
+    "snap_monthly_self_employment_income": "us-co:regulations/10-ccr-2506-1/4.403.11#snap_monthly_self_employment_income",
+    "snap_countable_employee_wage_income": "us-co:regulations/10-ccr-2506-1/4.403#snap_countable_employee_wage_income",
+    "snap_sick_vacation_bonus_earned_income": "us-co:regulations/10-ccr-2506-1/4.403#snap_sick_vacation_bonus_earned_income",
+    "snap_striker_income_for_eligibility": "us-co:regulations/10-ccr-2506-1/4.403#snap_striker_income_for_eligibility",
+    "snap_rental_income_is_earned": "us-co:regulations/10-ccr-2506-1/4.403#snap_rental_income_is_earned",
+    "snap_countable_rental_earned_income": "us-co:regulations/10-ccr-2506-1/4.403#snap_countable_rental_earned_income",
+    "snap_capital_goods_sale_self_employment_income": "us-co:regulations/10-ccr-2506-1/4.403#snap_capital_goods_sale_self_employment_income",
+    "snap_countable_earned_income": "us-co:regulations/10-ccr-2506-1/4.403#snap_countable_earned_income",
+    "snap_countable_rental_unearned_income": "us-co:regulations/10-ccr-2506-1/4.404#snap_countable_rental_unearned_income",
+    "snap_countable_sponsor_unearned_income": "us-co:regulations/10-ccr-2506-1/4.404#snap_countable_sponsor_unearned_income",
+    "snap_countable_terminated_employment_installment_pay": "us-co:regulations/10-ccr-2506-1/4.404#snap_countable_terminated_employment_installment_pay",
+    "snap_terminated_employment_lump_sum_resource": "us-co:regulations/10-ccr-2506-1/4.404#snap_terminated_employment_lump_sum_resource",
+    "snap_countable_nonprofit_gift_income": "us-co:regulations/10-ccr-2506-1/4.404#snap_countable_nonprofit_gift_income",
+    "snap_countable_other_gift_income": "us-co:regulations/10-ccr-2506-1/4.404#snap_countable_other_gift_income",
+    "snap_countable_trust_income": "us-co:regulations/10-ccr-2506-1/4.404#snap_countable_trust_income",
+    "snap_countable_lottery_gambling_winnings": "us-co:regulations/10-ccr-2506-1/4.404#snap_countable_lottery_gambling_winnings",
+    "snap_countable_unearned_income": "us-co:regulations/10-ccr-2506-1/4.404#snap_countable_unearned_income",
+    "co_snap_expanded_categorical_gross_income_limit": "us-co:regulations/10-ccr-2506-1/4.401.1#co_snap_expanded_categorical_gross_income_limit",
+    "passes_gross_income_test": "us-co:regulations/10-ccr-2506-1/4.401#passes_gross_income_test",
+    "passes_net_income_test": "us-co:regulations/10-ccr-2506-1/4.401#passes_net_income_test",
+    "snap_income_eligible": "us-co:regulations/10-ccr-2506-1/4.401#snap_income_eligible",
+    "snap_liquid_resource_value": "us-co:regulations/10-ccr-2506-1/4.408.1#snap_liquid_resource_value",
+    "snap_non_liquid_resource_fair_market_value": "us-co:regulations/10-ccr-2506-1/4.408.1#snap_non_liquid_resource_fair_market_value",
+    "snap_non_liquid_resource_value": "us-co:regulations/10-ccr-2506-1/4.408.1#snap_non_liquid_resource_value",
+    "snap_real_property_fair_market_value": "us-co:regulations/10-ccr-2506-1/4.408.1#snap_real_property_fair_market_value",
+    "snap_real_property_resource_value": "us-co:regulations/10-ccr-2506-1/4.408.1#snap_real_property_resource_value",
+    "snap_vehicle_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.410#snap_vehicle_resource_exemption",
+    "snap_home_and_surrounding_property_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.410#snap_home_and_surrounding_property_resource_exemption",
+    "snap_prorated_income_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.410#snap_prorated_income_resource_exemption",
+    "snap_personal_property_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.410#snap_personal_property_resource_exemption",
+    "snap_retirement_account_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.410#snap_retirement_account_resource_exemption",
+    "snap_education_account_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.410#snap_education_account_resource_exemption",
+    "snap_prepaid_funeral_agreement_exempt_equity": "us-co:regulations/10-ccr-2506-1/4.410#snap_prepaid_funeral_agreement_exempt_equity",
+    "snap_prepaid_funeral_agreement_countable_equity": "us-co:regulations/10-ccr-2506-1/4.410#snap_prepaid_funeral_agreement_countable_equity",
+    "snap_income_producing_property_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.410#snap_income_producing_property_resource_exemption",
+    "snap_installment_contract_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.410#snap_installment_contract_resource_exemption",
+    "snap_farm_self_employment_property_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.410#snap_farm_self_employment_property_resource_exemption",
+    "snap_trust_resource_inaccessible": "us-co:regulations/10-ccr-2506-1/4.410#snap_trust_resource_inaccessible",
+    "snap_inaccessible_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.410#snap_inaccessible_resource_exemption",
+    "snap_no_significant_return_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.410#snap_no_significant_return_resource_exemption",
+    "snap_battered_shelter_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.410#snap_battered_shelter_resource_exemption",
+    "snap_household_member_use_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.410#snap_household_member_use_resource_exemption",
+    "snap_specific_purpose_government_payment_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.410#snap_specific_purpose_government_payment_resource_exemption",
+    "snap_eitc_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.410#snap_eitc_resource_exemption",
+    "snap_federal_tax_refund_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.410#snap_federal_tax_refund_resource_exemption",
+    "snap_exempt_resources": "us-co:regulations/10-ccr-2506-1/4.410#snap_exempt_resources",
+    "snap_countable_resources_after_exemptions": "us-co:regulations/10-ccr-2506-1/4.410#snap_countable_resources_after_exemptions",
+    "snap_resource_limit_categorical_exemption_applies": "us:regulations/7-cfr/273/8#snap_resource_limit_categorical_exemption_applies",
+    "snap_financial_resources_within_limit": "us:regulations/7-cfr/273/8#snap_financial_resources_within_limit",
+    "snap_resource_eligible": "us:regulations/7-cfr/273/8#snap_resource_eligible",
+    "snap_categorically_eligible_for_resource_exemption": "us-co:regulations/10-ccr-2506-1/4.408#snap_categorically_eligible_for_resource_exemption",
+    "snap_sponsor_resources_counted": "us-co:regulations/10-ccr-2506-1/4.408#snap_sponsor_resources_counted",
+    "snap_countable_resources_for_resource_test": "us-co:regulations/10-ccr-2506-1/4.408#snap_countable_resources_for_resource_test",
+    "snap_countable_financial_resources": "us-co:regulations/10-ccr-2506-1/4.408#snap_countable_financial_resources",
+    "snap_resource_transfer_review_required": "us-co:regulations/10-ccr-2506-1/4.408.2#snap_resource_transfer_review_required",
+    "snap_resource_transfer_exempt_from_disqualification": "us-co:regulations/10-ccr-2506-1/4.408.2#snap_resource_transfer_exempt_from_disqualification",
+    "snap_resource_transfer_disqualification_applies": "us-co:regulations/10-ccr-2506-1/4.408.2#snap_resource_transfer_disqualification_applies",
+    "snap_transferred_resource_excess_amount": "us-co:regulations/10-ccr-2506-1/4.408.2#snap_transferred_resource_excess_amount",
+    "snap_resource_transfer_disqualification_months": "us-co:regulations/10-ccr-2506-1/4.408.2#snap_resource_transfer_disqualification_months",
+    "snap_heating_cooling_utility_allowance_eligible": "us-co:regulations/10-ccr-2506-1/4.407.31#snap_heating_cooling_utility_allowance_eligible",
+    "snap_non_heating_cooling_utility_expense_count": "us-co:regulations/10-ccr-2506-1/4.407.31#snap_non_heating_cooling_utility_expense_count",
+    "snap_basic_utility_allowance_eligible": "us-co:regulations/10-ccr-2506-1/4.407.31#snap_basic_utility_allowance_eligible",
+    "snap_one_utility_allowance_eligible": "us-co:regulations/10-ccr-2506-1/4.407.31#snap_one_utility_allowance_eligible",
+    "snap_telephone_allowance_eligible": "us-co:regulations/10-ccr-2506-1/4.407.31#snap_telephone_allowance_eligible",
+    "snap_allowable_shelter_costs": "us-co:regulations/10-ccr-2506-1/4.407.3#snap_allowable_shelter_costs",
+    "half_adjusted_income": "us-co:regulations/10-ccr-2506-1/4.407.3#half_adjusted_income",
+    "excess_shelter_unclamped": "us-co:regulations/10-ccr-2506-1/4.407.3#excess_shelter_unclamped",
+    "excess_shelter_deduction": "us-co:regulations/10-ccr-2506-1/4.407.3#excess_shelter_deduction",
+    "dependent_care_deduction": "us-co:regulations/10-ccr-2506-1/4.407.4#dependent_care_deduction",
+    "child_support_deduction": "us-co:regulations/10-ccr-2506-1/4.407.5#child_support_deduction",
+    "medical_excess": "us-co:regulations/10-ccr-2506-1/4.407.6#medical_excess",
+    "medical_deduction": "us-co:regulations/10-ccr-2506-1/4.407.61#medical_deduction",
+    "snap_application_denied_for_zero_benefit": "us-co:regulations/10-ccr-2506-1/4.207.3#snap_application_denied_for_zero_benefit",
+    "snap_initial_month_proration_start_date": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_initial_month_proration_start_date",
+    "snap_initial_month_proration_exception": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_initial_month_proration_exception",
+    "snap_initial_month_proration_applies": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_initial_month_proration_applies",
+    "snap_days_in_application_month": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_days_in_application_month",
+    "snap_initial_month_proration_days": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_initial_month_proration_days",
+    "snap_initial_month_proration_factor": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_initial_month_proration_factor",
+    "snap_initial_month_prorated_allotment": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_initial_month_prorated_allotment",
+    "snap_allotment": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_allotment",
+    "max_allotment_for_number_of_boarders": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#max_allotment_for_number_of_boarders",
+    "other_countable_self_employment_earned_income": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#other_countable_self_employment_earned_income",
+    "snap_monthly_household_income": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#snap_monthly_household_income",
+    "gross_income": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#gross_income",
+    "shelter_costs": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#shelter_costs",
+    "total_household_resources_before_exclusions": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#total_household_resources_before_exclusions",
+    "snap_student_eligible": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#snap_student_eligible",
+    "snap_residency_citizenship_eligible": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#snap_residency_citizenship_eligible",
+    "snap_work_requirement_eligible": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#snap_work_requirement_eligible",
+    "snap_eligible": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#snap_eligible"
+  },
+  "all_outputs": [
+    {
+      "name": "snap_maximum_allotment",
+      "id": "us:policies/usda/snap/fy-2026-cola/maximum-allotments#snap_maximum_allotment",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "USDA SNAP FY 2026 maximum allotments and deductions"
+    },
+    {
+      "name": "snap_one_person_thrifty_food_plan_cost",
+      "id": "us:policies/usda/snap/fy-2026-cola/maximum-allotments#snap_one_person_thrifty_food_plan_cost",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "USDA SNAP FY 2026 maximum allotments and deductions"
+    },
+    {
+      "name": "snap_household_has_elderly_or_disabled_member",
+      "id": "us:statutes/7/2012/j#snap_household_has_elderly_or_disabled_member",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 USC 2012(j)"
+    },
+    {
+      "name": "snap_standard_deduction_48_states_dc",
+      "id": "us:policies/usda/snap/fy-2026-cola/deductions#snap_standard_deduction_48_states_dc",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "USDA SNAP FY 2026 maximum allotments and deductions"
+    },
+    {
+      "name": "snap_standard_deduction",
+      "id": "us:policies/usda/snap/fy-2026-cola/deductions#snap_standard_deduction",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "USDA SNAP FY 2026 maximum allotments and deductions"
+    },
+    {
+      "name": "snap_asset_limit",
+      "id": "us:policies/usda/snap/fy-2026-cola/deductions#snap_asset_limit",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "USDA SNAP FY 2026 maximum allotments and deductions"
+    },
+    {
+      "name": "snap_net_income_limit_100_percent_fpl_48_states_dc",
+      "id": "us:policies/usda/snap/fy-2026-cola/income-eligibility-standards#snap_net_income_limit_100_percent_fpl_48_states_dc",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "USDA SNAP FY 2026 income eligibility standards"
+    },
+    {
+      "name": "snap_gross_income_limit_130_percent_fpl_48_states_dc",
+      "id": "us:policies/usda/snap/fy-2026-cola/income-eligibility-standards#snap_gross_income_limit_130_percent_fpl_48_states_dc",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "USDA SNAP FY 2026 income eligibility standards"
+    },
+    {
+      "name": "snap_gross_income_limit_165_percent_fpl_48_states_dc",
+      "id": "us:policies/usda/snap/fy-2026-cola/income-eligibility-standards#snap_gross_income_limit_165_percent_fpl_48_states_dc",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "USDA SNAP FY 2026 income eligibility standards"
+    },
+    {
+      "name": "snap_duplicate_participation_exception_applies",
+      "id": "us:regulations/7-cfr/273/3#snap_duplicate_participation_exception_applies",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.3(a)"
+    },
+    {
+      "name": "snap_household_duplicate_participation_barred",
+      "id": "us:regulations/7-cfr/273/3#snap_household_duplicate_participation_barred",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.3(a)"
+    },
+    {
+      "name": "snap_household_state_resident",
+      "id": "us:regulations/7-cfr/273/3#snap_household_state_resident",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.3(a)"
+    },
+    {
+      "name": "snap_household_residency_eligible",
+      "id": "us:regulations/7-cfr/273/3#snap_household_residency_eligible",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.3(a)"
+    },
+    {
+      "name": "snap_member_citizen_or_national_status_eligible",
+      "id": "us:regulations/7-cfr/273/4#snap_member_citizen_or_national_status_eligible",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.4(a)(1)-(2)"
+    },
+    {
+      "name": "snap_member_special_nonqualified_alien_status_eligible",
+      "id": "us:regulations/7-cfr/273/4#snap_member_special_nonqualified_alien_status_eligible",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.4(a)(3)-(5)"
+    },
+    {
+      "name": "snap_member_qualified_alien_immediately_eligible",
+      "id": "us:regulations/7-cfr/273/4#snap_member_qualified_alien_immediately_eligible",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.4(a)(6)(ii)"
+    },
+    {
+      "name": "snap_member_qualified_alien_after_wait_eligible",
+      "id": "us:regulations/7-cfr/273/4#snap_member_qualified_alien_after_wait_eligible",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.4(a)(6)(iii)"
+    },
+    {
+      "name": "snap_member_qualified_alien_status_eligible",
+      "id": "us:regulations/7-cfr/273/4#snap_member_qualified_alien_status_eligible",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.4(a)(6)"
+    },
+    {
+      "name": "snap_member_alien_status_eligible",
+      "id": "us:regulations/7-cfr/273/4#snap_member_alien_status_eligible",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.4(a), 7 CFR 273.4(b)(2)"
+    },
+    {
+      "name": "snap_member_citizenship_or_alien_status_eligible",
+      "id": "us:regulations/7-cfr/273/4#snap_member_citizenship_or_alien_status_eligible",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.4(a), 7 CFR 273.4(b)(2)"
+    },
+    {
+      "name": "snap_earned_income_subject_to_deduction",
+      "id": "us:statutes/7/2014/e/2#snap_earned_income_subject_to_deduction",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "7 USC 2014(e)(2)"
+    },
+    {
+      "name": "snap_earned_income_deduction",
+      "id": "us:statutes/7/2014/e/2#snap_earned_income_deduction",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "7 USC 2014(e)(2)"
+    },
+    {
+      "name": "snap_net_income_pre_shelter",
+      "id": "us:statutes/7/2014/e/6/A#snap_net_income_pre_shelter",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "7 USC 2014(e)(6)(A)"
+    },
+    {
+      "name": "snap_net_income",
+      "id": "us:statutes/7/2014/e/6/A#snap_net_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "7 USC 2014(d) and (e)"
+    },
+    {
+      "name": "snap_net_income_for_allotment",
+      "id": "us:statutes/7/2017/a#snap_net_income_for_allotment",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "7 USC 2017(a)"
+    },
+    {
+      "name": "snap_household_food_contribution",
+      "id": "us:statutes/7/2017/a#snap_household_food_contribution",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "7 USC 2017(a)"
+    },
+    {
+      "name": "snap_allotment_before_minimum",
+      "id": "us:statutes/7/2017/a#snap_allotment_before_minimum",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "7 USC 2017(a)"
+    },
+    {
+      "name": "snap_minimum_monthly_allotment",
+      "id": "us:statutes/7/2017/a#snap_minimum_monthly_allotment",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "7 USC 2017(a)"
+    },
+    {
+      "name": "snap_regular_month_allotment",
+      "id": "us:statutes/7/2017/a#snap_regular_month_allotment",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "7 USC 2017(a)"
+    },
+    {
+      "name": "snap_member_general_work_requirement_exempt",
+      "id": "us:regulations/7-cfr/273/7#snap_member_general_work_requirement_exempt",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.7(b)(1)"
+    },
+    {
+      "name": "snap_member_general_work_requirement_compliant",
+      "id": "us:regulations/7-cfr/273/7#snap_member_general_work_requirement_compliant",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.7(a)(1)"
+    },
+    {
+      "name": "snap_member_general_work_requirement_waived",
+      "id": "us:regulations/7-cfr/273/7#snap_member_general_work_requirement_waived",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.7(a)(6)"
+    },
+    {
+      "name": "snap_member_general_work_requirement_eligible",
+      "id": "us:regulations/7-cfr/273/7#snap_member_general_work_requirement_eligible",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.7(a), 7 CFR 273.7(b)"
+    },
+    {
+      "name": "snap_member_abawd_fulfilling_work_requirement",
+      "id": "us:regulations/7-cfr/273/24#snap_member_abawd_fulfilling_work_requirement",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.24(a)(1)"
+    },
+    {
+      "name": "snap_member_abawd_exception_applies",
+      "id": "us:regulations/7-cfr/273/24#snap_member_abawd_exception_applies",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.24(c)"
+    },
+    {
+      "name": "snap_member_abawd_time_limit_inapplicable",
+      "id": "us:regulations/7-cfr/273/24#snap_member_abawd_time_limit_inapplicable",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.24(b)(1), 7 CFR 273.24(c), 7 CFR 273.24(f)"
+    },
+    {
+      "name": "snap_member_abawd_countable_month_limit_exceeded",
+      "id": "us:regulations/7-cfr/273/24#snap_member_abawd_countable_month_limit_exceeded",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.24(b)"
+    },
+    {
+      "name": "snap_member_abawd_regained_or_additional_eligibility",
+      "id": "us:regulations/7-cfr/273/24#snap_member_abawd_regained_or_additional_eligibility",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.24(d), 7 CFR 273.24(e)"
+    },
+    {
+      "name": "snap_member_abawd_time_limit_eligible",
+      "id": "us:regulations/7-cfr/273/24#snap_member_abawd_time_limit_eligible",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.24(a)-(f)"
+    },
+    {
+      "name": "snap_member_work_requirement_eligible",
+      "id": "us:regulations/7-cfr/273/24#snap_member_work_requirement_eligible",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.7, 7 CFR 273.24"
+    },
+    {
+      "name": "snap_member_work_requirement_ineligible",
+      "id": "us:regulations/7-cfr/273/24#snap_member_work_requirement_ineligible",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.7, 7 CFR 273.24"
+    },
+    {
+      "name": "snap_boarder_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403.2#snap_boarder_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403.2(A)"
+    },
+    {
+      "name": "snap_boarder_room_and_meals_cost_basis",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403.2#snap_boarder_room_and_meals_cost_basis",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403.2(B)"
+    },
+    {
+      "name": "snap_boarder_cost_of_doing_business",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403.2#snap_boarder_cost_of_doing_business",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403.2(B)"
+    },
+    {
+      "name": "snap_boarder_net_self_employment_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403.2#snap_boarder_net_self_employment_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403.2(C)"
+    },
+    {
+      "name": "snap_earned_income_including_boarder_net_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403.2#snap_earned_income_including_boarder_net_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403.2(C)"
+    },
+    {
+      "name": "snap_shelter_costs_excluding_boarder_direct_third_party_payments",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403.2#snap_shelter_costs_excluding_boarder_direct_third_party_payments",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403.2(D)"
+    },
+    {
+      "name": "snap_self_employment_period_gross_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403.11#snap_self_employment_period_gross_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403.11(A)"
+    },
+    {
+      "name": "snap_self_employment_period_net_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403.11#snap_self_employment_period_net_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403.11(A)"
+    },
+    {
+      "name": "snap_average_monthly_self_employment_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403.11#snap_average_monthly_self_employment_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403.11(A)"
+    },
+    {
+      "name": "snap_anticipated_monthly_capital_gains",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403.11#snap_anticipated_monthly_capital_gains",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403.11(D)"
+    },
+    {
+      "name": "snap_anticipated_monthly_net_self_employment_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403.11#snap_anticipated_monthly_net_self_employment_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403.11(D)"
+    },
+    {
+      "name": "snap_monthly_self_employment_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403.11#snap_monthly_self_employment_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403.11"
+    },
+    {
+      "name": "snap_countable_employee_wage_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403#snap_countable_employee_wage_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403(A)"
+    },
+    {
+      "name": "snap_countable_vista_earned_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403#snap_countable_vista_earned_income",
+      "entity": "Person",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 sections 4.403(A)(2), 4.403(C), and 4.405.2(A)(3)"
+    },
+    {
+      "name": "snap_countable_training_allowance_earned_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403#snap_countable_training_allowance_earned_income",
+      "entity": "Person",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403(B)(1)"
+    },
+    {
+      "name": "snap_countable_wioa_ojt_earned_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403#snap_countable_wioa_ojt_earned_income",
+      "entity": "Person",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 sections 4.403(B)(2) and 4.405.2(A)(6)"
+    },
+    {
+      "name": "snap_sick_vacation_bonus_earned_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403#snap_sick_vacation_bonus_earned_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403(A)(4)"
+    },
+    {
+      "name": "snap_striker_income_for_eligibility",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403#snap_striker_income_for_eligibility",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403(D)"
+    },
+    {
+      "name": "snap_rental_income_is_earned",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403#snap_rental_income_is_earned",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.403(E)(1)"
+    },
+    {
+      "name": "snap_countable_rental_earned_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403#snap_countable_rental_earned_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403(E)(1)"
+    },
+    {
+      "name": "snap_capital_goods_sale_self_employment_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403#snap_capital_goods_sale_self_employment_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403(E)(2)"
+    },
+    {
+      "name": "snap_llc_s_corporation_owner_draw_earned_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403#snap_llc_s_corporation_owner_draw_earned_income",
+      "entity": "Person",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403(F)"
+    },
+    {
+      "name": "snap_llc_s_corporation_owner_earned_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403#snap_llc_s_corporation_owner_earned_income",
+      "entity": "Person",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403(F)"
+    },
+    {
+      "name": "snap_countable_earned_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.403#snap_countable_earned_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.403"
+    },
+    {
+      "name": "snap_countable_rental_unearned_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.404#snap_countable_rental_unearned_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.404(D)"
+    },
+    {
+      "name": "snap_countable_sponsor_unearned_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.404#snap_countable_sponsor_unearned_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.404(E)"
+    },
+    {
+      "name": "snap_countable_terminated_employment_installment_pay",
+      "id": "us-co:regulations/10-ccr-2506-1/4.404#snap_countable_terminated_employment_installment_pay",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.404(F)"
+    },
+    {
+      "name": "snap_terminated_employment_lump_sum_resource",
+      "id": "us-co:regulations/10-ccr-2506-1/4.404#snap_terminated_employment_lump_sum_resource",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.404(F)"
+    },
+    {
+      "name": "snap_countable_nonprofit_gift_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.404#snap_countable_nonprofit_gift_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.404(G)"
+    },
+    {
+      "name": "snap_countable_other_gift_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.404#snap_countable_other_gift_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.404(G)"
+    },
+    {
+      "name": "snap_countable_trust_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.404#snap_countable_trust_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.404(H)"
+    },
+    {
+      "name": "snap_countable_lottery_gambling_winnings",
+      "id": "us-co:regulations/10-ccr-2506-1/4.404#snap_countable_lottery_gambling_winnings",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.404(I)"
+    },
+    {
+      "name": "snap_countable_unearned_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.404#snap_countable_unearned_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.404"
+    },
+    {
+      "name": "co_snap_expanded_categorical_gross_income_limit",
+      "id": "us-co:regulations/10-ccr-2506-1/4.401.1#co_snap_expanded_categorical_gross_income_limit",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.401.1"
+    },
+    {
+      "name": "passes_gross_income_test",
+      "id": "us-co:regulations/10-ccr-2506-1/4.401#passes_gross_income_test",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.401(A)"
+    },
+    {
+      "name": "passes_net_income_test",
+      "id": "us-co:regulations/10-ccr-2506-1/4.401#passes_net_income_test",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.401(A)"
+    },
+    {
+      "name": "snap_income_eligible",
+      "id": "us-co:regulations/10-ccr-2506-1/4.401#snap_income_eligible",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.401(A)"
+    },
+    {
+      "name": "snap_elderly_disabled_separate_household_allowed",
+      "id": "us-co:regulations/10-ccr-2506-1/4.401#snap_elderly_disabled_separate_household_allowed",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.401(A)(4)"
+    },
+    {
+      "name": "snap_liquid_resource_value",
+      "id": "us-co:regulations/10-ccr-2506-1/4.408.1#snap_liquid_resource_value",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.408.1(A)"
+    },
+    {
+      "name": "snap_non_liquid_resource_fair_market_value",
+      "id": "us-co:regulations/10-ccr-2506-1/4.408.1#snap_non_liquid_resource_fair_market_value",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.408.1(B)"
+    },
+    {
+      "name": "snap_non_liquid_resource_value",
+      "id": "us-co:regulations/10-ccr-2506-1/4.408.1#snap_non_liquid_resource_value",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.408.1(B)"
+    },
+    {
+      "name": "snap_real_property_fair_market_value",
+      "id": "us-co:regulations/10-ccr-2506-1/4.408.1#snap_real_property_fair_market_value",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.408.1(B)"
+    },
+    {
+      "name": "snap_real_property_resource_value",
+      "id": "us-co:regulations/10-ccr-2506-1/4.408.1#snap_real_property_resource_value",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.408.1(B)"
+    },
+    {
+      "name": "snap_vehicle_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_vehicle_resource_exemption",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(A)"
+    },
+    {
+      "name": "snap_home_and_surrounding_property_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_home_and_surrounding_property_resource_exemption",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(B)"
+    },
+    {
+      "name": "snap_prorated_income_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_prorated_income_resource_exemption",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(C)"
+    },
+    {
+      "name": "snap_personal_property_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_personal_property_resource_exemption",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(D)(1)"
+    },
+    {
+      "name": "snap_retirement_account_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_retirement_account_resource_exemption",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(D)(2)"
+    },
+    {
+      "name": "snap_education_account_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_education_account_resource_exemption",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(D)(3)"
+    },
+    {
+      "name": "snap_prepaid_funeral_agreement_exempt_equity",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_prepaid_funeral_agreement_exempt_equity",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(D)(4)"
+    },
+    {
+      "name": "snap_prepaid_funeral_agreement_countable_equity",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_prepaid_funeral_agreement_countable_equity",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(D)(4)"
+    },
+    {
+      "name": "snap_income_producing_property_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_income_producing_property_resource_exemption",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(E)(1)"
+    },
+    {
+      "name": "snap_installment_contract_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_installment_contract_resource_exemption",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(E)(2)"
+    },
+    {
+      "name": "snap_farm_self_employment_property_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_farm_self_employment_property_resource_exemption",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(E)(4)"
+    },
+    {
+      "name": "snap_trust_resource_inaccessible",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_trust_resource_inaccessible",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.410(F)(3)"
+    },
+    {
+      "name": "snap_inaccessible_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_inaccessible_resource_exemption",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(F)"
+    },
+    {
+      "name": "snap_no_significant_return_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_no_significant_return_resource_exemption",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(G)"
+    },
+    {
+      "name": "snap_battered_shelter_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_battered_shelter_resource_exemption",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(H)"
+    },
+    {
+      "name": "snap_household_member_use_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_household_member_use_resource_exemption",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(I)"
+    },
+    {
+      "name": "snap_specific_purpose_government_payment_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_specific_purpose_government_payment_resource_exemption",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(J)"
+    },
+    {
+      "name": "snap_eitc_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_eitc_resource_exemption",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(J)(12)"
+    },
+    {
+      "name": "snap_federal_tax_refund_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_federal_tax_refund_resource_exemption",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410(J)(17)"
+    },
+    {
+      "name": "snap_exempt_resources",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_exempt_resources",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.410"
+    },
+    {
+      "name": "snap_countable_resources_after_exemptions",
+      "id": "us-co:regulations/10-ccr-2506-1/4.410#snap_countable_resources_after_exemptions",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 sections 4.409 and 4.410"
+    },
+    {
+      "name": "snap_resource_limit_categorical_exemption_applies",
+      "id": "us:regulations/7-cfr/273/8#snap_resource_limit_categorical_exemption_applies",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.8(a)"
+    },
+    {
+      "name": "snap_financial_resources_within_limit",
+      "id": "us:regulations/7-cfr/273/8#snap_financial_resources_within_limit",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.8(b)"
+    },
+    {
+      "name": "snap_resource_eligible",
+      "id": "us:regulations/7-cfr/273/8#snap_resource_eligible",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.8(a), 7 CFR 273.8(b)"
+    },
+    {
+      "name": "snap_categorically_eligible_for_resource_exemption",
+      "id": "us-co:regulations/10-ccr-2506-1/4.408#snap_categorically_eligible_for_resource_exemption",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.408(A)"
+    },
+    {
+      "name": "snap_sponsor_resources_counted",
+      "id": "us-co:regulations/10-ccr-2506-1/4.408#snap_sponsor_resources_counted",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.408(B)"
+    },
+    {
+      "name": "snap_countable_resources_for_resource_test",
+      "id": "us-co:regulations/10-ccr-2506-1/4.408#snap_countable_resources_for_resource_test",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.408(B)"
+    },
+    {
+      "name": "snap_countable_financial_resources",
+      "id": "us-co:regulations/10-ccr-2506-1/4.408#snap_countable_financial_resources",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.408(B)"
+    },
+    {
+      "name": "snap_resource_transfer_review_required",
+      "id": "us-co:regulations/10-ccr-2506-1/4.408.2#snap_resource_transfer_review_required",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.408.2"
+    },
+    {
+      "name": "snap_resource_transfer_exempt_from_disqualification",
+      "id": "us-co:regulations/10-ccr-2506-1/4.408.2#snap_resource_transfer_exempt_from_disqualification",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.408.2(A)"
+    },
+    {
+      "name": "snap_resource_transfer_disqualification_applies",
+      "id": "us-co:regulations/10-ccr-2506-1/4.408.2#snap_resource_transfer_disqualification_applies",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.408.2"
+    },
+    {
+      "name": "snap_transferred_resource_excess_amount",
+      "id": "us-co:regulations/10-ccr-2506-1/4.408.2#snap_transferred_resource_excess_amount",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.408.2(B)"
+    },
+    {
+      "name": "snap_resource_transfer_disqualification_months",
+      "id": "us-co:regulations/10-ccr-2506-1/4.408.2#snap_resource_transfer_disqualification_months",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "integer",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.408.2(C)"
+    },
+    {
+      "name": "snap_heating_cooling_utility_allowance_eligible",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.31#snap_heating_cooling_utility_allowance_eligible",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.407.31(A)"
+    },
+    {
+      "name": "snap_non_heating_cooling_utility_expense_count",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.31#snap_non_heating_cooling_utility_expense_count",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "integer",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.407.31(B)-(D)"
+    },
+    {
+      "name": "snap_basic_utility_allowance_eligible",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.31#snap_basic_utility_allowance_eligible",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.407.31(B)"
+    },
+    {
+      "name": "snap_one_utility_allowance_eligible",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.31#snap_one_utility_allowance_eligible",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.407.31(C)"
+    },
+    {
+      "name": "snap_telephone_allowance_eligible",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.31#snap_telephone_allowance_eligible",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.407.31(D)"
+    },
+    {
+      "name": "snap_standard_utility_allowance",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.31#snap_standard_utility_allowance",
+      "entity": "SnapUnit",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.407.31(A)"
+    },
+    {
+      "name": "snap_limited_utility_allowance",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.31#snap_limited_utility_allowance",
+      "entity": "SnapUnit",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.407.31(B)"
+    },
+    {
+      "name": "snap_one_utility_allowance",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.31#snap_one_utility_allowance",
+      "entity": "SnapUnit",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.407.31(C)"
+    },
+    {
+      "name": "snap_individual_utility_allowance",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.31#snap_individual_utility_allowance",
+      "entity": "SnapUnit",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.407.31(D)"
+    },
+    {
+      "name": "snap_allowable_shelter_costs",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.3#snap_allowable_shelter_costs",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.407.3(C)"
+    },
+    {
+      "name": "half_adjusted_income",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.3#half_adjusted_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.407.3(A)"
+    },
+    {
+      "name": "excess_shelter_unclamped",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.3#excess_shelter_unclamped",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.407.3(A)"
+    },
+    {
+      "name": "excess_shelter_deduction",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.3#excess_shelter_deduction",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.407.3(B)"
+    },
+    {
+      "name": "dependent_care_deduction",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.4#dependent_care_deduction",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.407.4"
+    },
+    {
+      "name": "child_support_deduction",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.5#child_support_deduction",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.407.5"
+    },
+    {
+      "name": "medical_excess",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.6#medical_excess",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.407.6"
+    },
+    {
+      "name": "medical_deduction",
+      "id": "us-co:regulations/10-ccr-2506-1/4.407.61#medical_deduction",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.407.61"
+    },
+    {
+      "name": "snap_member_enrolled_in_institution_of_higher_education",
+      "id": "us:regulations/7-cfr/273/5#snap_member_enrolled_in_institution_of_higher_education",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.5(a)"
+    },
+    {
+      "name": "snap_student_age_exemption",
+      "id": "us:regulations/7-cfr/273/5#snap_student_age_exemption",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.5(b)(1)"
+    },
+    {
+      "name": "snap_student_physical_or_mental_unfitness_exemption",
+      "id": "us:regulations/7-cfr/273/5#snap_student_physical_or_mental_unfitness_exemption",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.5(b)(2)"
+    },
+    {
+      "name": "snap_student_tanf_exemption",
+      "id": "us:regulations/7-cfr/273/5#snap_student_tanf_exemption",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.5(b)(3)"
+    },
+    {
+      "name": "snap_student_jobs_program_exemption",
+      "id": "us:regulations/7-cfr/273/5#snap_student_jobs_program_exemption",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.5(b)(4)"
+    },
+    {
+      "name": "snap_student_employment_exemption",
+      "id": "us:regulations/7-cfr/273/5#snap_student_employment_exemption",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.5(b)(5)"
+    },
+    {
+      "name": "snap_student_work_study_exemption",
+      "id": "us:regulations/7-cfr/273/5#snap_student_work_study_exemption",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.5(b)(6)"
+    },
+    {
+      "name": "snap_student_on_the_job_training_exemption",
+      "id": "us:regulations/7-cfr/273/5#snap_student_on_the_job_training_exemption",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.5(b)(7)"
+    },
+    {
+      "name": "snap_student_dependent_under_six_exemption",
+      "id": "us:regulations/7-cfr/273/5#snap_student_dependent_under_six_exemption",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.5(b)(8)"
+    },
+    {
+      "name": "snap_student_dependent_six_to_under_twelve_exemption",
+      "id": "us:regulations/7-cfr/273/5#snap_student_dependent_six_to_under_twelve_exemption",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.5(b)(9)"
+    },
+    {
+      "name": "snap_student_single_parent_full_time_exemption",
+      "id": "us:regulations/7-cfr/273/5#snap_student_single_parent_full_time_exemption",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.5(b)(10)"
+    },
+    {
+      "name": "snap_student_employment_training_program_exemption",
+      "id": "us:regulations/7-cfr/273/5#snap_student_employment_training_program_exemption",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.5(b)(11)"
+    },
+    {
+      "name": "snap_student_exempt",
+      "id": "us:regulations/7-cfr/273/5#snap_student_exempt",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.5(b)"
+    },
+    {
+      "name": "snap_member_student_ineligible",
+      "id": "us:regulations/7-cfr/273/5#snap_member_student_ineligible",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.5(a)"
+    },
+    {
+      "name": "snap_member_student_eligible",
+      "id": "us:regulations/7-cfr/273/5#snap_member_student_eligible",
+      "entity": "Person",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "7 CFR 273.5"
+    },
+    {
+      "name": "snap_application_denied_for_zero_benefit",
+      "id": "us-co:regulations/10-ccr-2506-1/4.207.3#snap_application_denied_for_zero_benefit",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.207.3(B)"
+    },
+    {
+      "name": "snap_initial_month_proration_start_date",
+      "id": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_initial_month_proration_start_date",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "date",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.207.2(A)"
+    },
+    {
+      "name": "snap_initial_month_proration_exception",
+      "id": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_initial_month_proration_exception",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.207.2(B)"
+    },
+    {
+      "name": "snap_initial_month_proration_applies",
+      "id": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_initial_month_proration_applies",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.207.2"
+    },
+    {
+      "name": "snap_days_in_application_month",
+      "id": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_days_in_application_month",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "integer",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.207.2(C)"
+    },
+    {
+      "name": "snap_initial_month_proration_days",
+      "id": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_initial_month_proration_days",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "integer",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.207.2(C)"
+    },
+    {
+      "name": "snap_initial_month_proration_factor",
+      "id": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_initial_month_proration_factor",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": null,
+      "source": "10 CCR 2506-1 section 4.207.2(C)"
+    },
+    {
+      "name": "snap_initial_month_prorated_allotment",
+      "id": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_initial_month_prorated_allotment",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 section 4.207.2(C)"
+    },
+    {
+      "name": "snap_allotment",
+      "id": "us-co:regulations/10-ccr-2506-1/4.207.2#snap_allotment",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "10 CCR 2506-1 sections 4.207.2 and 4.207.3(B)"
+    },
+    {
+      "name": "max_allotment_for_number_of_boarders",
+      "id": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#max_allotment_for_number_of_boarders",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "Colorado SNAP FY 2026 benefit calculation composition"
+    },
+    {
+      "name": "other_countable_self_employment_earned_income",
+      "id": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#other_countable_self_employment_earned_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "Colorado SNAP FY 2026 benefit calculation composition"
+    },
+    {
+      "name": "snap_monthly_household_income",
+      "id": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#snap_monthly_household_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "Colorado SNAP FY 2026 benefit calculation composition"
+    },
+    {
+      "name": "gross_income",
+      "id": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#gross_income",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "Colorado SNAP FY 2026 benefit calculation composition"
+    },
+    {
+      "name": "shelter_costs",
+      "id": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#shelter_costs",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "Colorado SNAP FY 2026 benefit calculation composition"
+    },
+    {
+      "name": "total_household_resources_before_exclusions",
+      "id": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#total_household_resources_before_exclusions",
+      "entity": "Household",
+      "semantics": "scalar",
+      "dtype": "decimal",
+      "unit": "USD",
+      "source": "Colorado SNAP FY 2026 benefit calculation composition"
+    },
+    {
+      "name": "snap_student_eligible",
+      "id": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#snap_student_eligible",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "Colorado SNAP FY 2026 benefit calculation composition"
+    },
+    {
+      "name": "snap_residency_citizenship_eligible",
+      "id": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#snap_residency_citizenship_eligible",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "Colorado SNAP FY 2026 benefit calculation composition"
+    },
+    {
+      "name": "snap_work_requirement_eligible",
+      "id": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#snap_work_requirement_eligible",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "Colorado SNAP FY 2026 benefit calculation composition"
+    },
+    {
+      "name": "snap_eligible",
+      "id": "us-co:policies/cdhs/snap/fy-2026-benefit-calculation#snap_eligible",
+      "entity": "Household",
+      "semantics": "judgment",
+      "dtype": "judgment",
+      "unit": null,
+      "source": "Colorado SNAP FY 2026 benefit calculation composition"
+    }
+  ],
+  "corpus_paths": {
+    "us:policies/usda/snap/fy-2026-cola/deductions": "us/guidance/usda/fns/snap-fy2026-cola/page-2",
+    "us:policies/usda/snap/fy-2026-cola/maximum-allotments": "us/guidance/usda/fns/snap-fy2026-cola/page-1",
+    "us:policies/usda/snap/fy-2026-cola/income-eligibility-standards": "us/guidance/usda/fns/snap-fy2026-income-eligibility-standards/page-1",
+    "us:policies/irs/rev-proc-2025-32/standard-deduction": "us/guidance/irs/rev-proc-2025-32/page-18",
+    "us:statutes/7/2014/e/2": "us/statute/7/2014",
+    "us:statutes/7/2014/e/6/A": "us/statute/7/2014",
+    "us:statutes/7/2012/j": "us/statute/7/2012",
+    "us:statutes/7/2017/a": "us/statute/7/2017",
+    "us:statutes/26/1401": "us/statute/26/1401",
+    "us:statutes/26/3111/a": "us/statute/26/3111",
+    "us:statutes/26/3111/b": "us/statute/26/3111",
+    "us:statutes/26/3111/c": "us/statute/26/3111",
+    "us:statutes/26/3101/a": "us/statute/26/3101",
+    "us:statutes/26/3101/b/1": "us/statute/26/3101",
+    "us:statutes/26/3101/b/2": "us/statute/26/3101",
+    "us:statutes/26/63/c": "us/statute/26/63",
+    "us:statutes/26/63/c/5": "us/statute/26/63",
+    "us:statutes/26/45A/a": "us/statute/26/45A",
+    "us:regulations/7-cfr/273/7": "us/regulation/7/273/7",
+    "us:regulations/7-cfr/273/3": "us/regulation/7/273/3",
+    "us:regulations/7-cfr/273/24": "us/regulation/7/273/24",
+    "us:regulations/7-cfr/273/5": "us/regulation/7/273/5",
+    "us:regulations/7-cfr/273/8": "us/regulation/7/273/8",
+    "us:regulations/7-cfr/273/4": "us/regulation/7/273/4",
+    "us-co:policies/cdhs/snap/fy-2026-benefit-calculation": "us/guidance/usda/fns/snap-fy2026-cola/page-1",
+    "us-co:regulations/10-ccr-2506-1/4.306.1": "us-co/regulation/10-ccr-2506-1/4.306.1",
+    "us-co:regulations/10-ccr-2506-1/4.403.11": "us-co/regulation/10-ccr-2506-1/4.403.11",
+    "us-co:regulations/10-ccr-2506-1/4.407.2": "us-co/regulation/10-ccr-2506-1/4.407.2",
+    "us-co:regulations/10-ccr-2506-1/4.402.1": "us-co/regulation/10-ccr-2506-1/4.402.1",
+    "us-co:regulations/10-ccr-2506-1/4.407.3": "us-co/regulation/10-ccr-2506-1/4.407.3",
+    "us-co:regulations/10-ccr-2506-1/4.401": "us-co/regulation/10-ccr-2506-1/4.401",
+    "us-co:regulations/10-ccr-2506-1/4.406": "us-co/regulation/10-ccr-2506-1/4.406",
+    "us-co:regulations/10-ccr-2506-1/4.401.2": "us-co/regulation/10-ccr-2506-1/4.401.2",
+    "us-co:regulations/10-ccr-2506-1/4.408.1": "us-co/regulation/10-ccr-2506-1/4.408.1",
+    "us-co:regulations/10-ccr-2506-1/4.410": "us-co/regulation/10-ccr-2506-1/4.410",
+    "us-co:regulations/10-ccr-2506-1/4.207.3": "us-co/regulation/10-ccr-2506-1/4.207.3",
+    "us-co:regulations/10-ccr-2506-1/4.403.3": "us-co/regulation/10-ccr-2506-1/4.403.3",
+    "us-co:regulations/10-ccr-2506-1/4.407.4": "us-co/regulation/10-ccr-2506-1/4.407.4",
+    "us-co:regulations/10-ccr-2506-1/4.406.1": "us-co/regulation/10-ccr-2506-1/4.406.1",
+    "us-co:regulations/10-ccr-2506-1/4.407.5": "us-co/regulation/10-ccr-2506-1/4.407.5",
+    "us-co:regulations/10-ccr-2506-1/4.403.2": "us-co/regulation/10-ccr-2506-1/4.403.2",
+    "us-co:regulations/10-ccr-2506-1/4.207.2": "us-co/regulation/10-ccr-2506-1/4.207.2",
+    "us-co:regulations/10-ccr-2506-1/4.411": "us-co/regulation/10-ccr-2506-1/4.411",
+    "us-co:regulations/10-ccr-2506-1/4.408": "us-co/regulation/10-ccr-2506-1/4.408",
+    "us-co:regulations/10-ccr-2506-1/4.306": "us-co/regulation/10-ccr-2506-1/4.306",
+    "us-co:regulations/10-ccr-2506-1/4.407.6": "us-co/regulation/10-ccr-2506-1/4.407.6",
+    "us-co:regulations/10-ccr-2506-1/4.404": "us-co/regulation/10-ccr-2506-1/4.404",
+    "us-co:regulations/10-ccr-2506-1/4.405": "us-co/regulation/10-ccr-2506-1/4.405",
+    "us-co:regulations/10-ccr-2506-1/4.408.2": "us-co/regulation/10-ccr-2506-1/4.408.2",
+    "us-co:regulations/10-ccr-2506-1/4.401.1": "us-co/regulation/10-ccr-2506-1/4.401.1",
+    "us-co:regulations/10-ccr-2506-1/4.409": "us-co/regulation/10-ccr-2506-1/4.409",
+    "us-co:regulations/10-ccr-2506-1/4.407.61": "us-co/regulation/10-ccr-2506-1/4.407.61",
+    "us-co:regulations/10-ccr-2506-1/4.402": "us-co/regulation/10-ccr-2506-1/4.402",
+    "us-co:regulations/10-ccr-2506-1/4.407.31": "us-co/regulation/10-ccr-2506-1/4.407.31",
+    "us-co:regulations/10-ccr-2506-1/4.403": "us-co/regulation/10-ccr-2506-1/4.403",
+    "us-co:regulations/10-ccr-2506-1/4.403.12": "us-co/regulation/10-ccr-2506-1/4.403.12",
+    "us-co:regulations/10-ccr-2506-1/4.407.1": "us-co/regulation/10-ccr-2506-1/4.407.1",
+    "us-co:regulations/10-ccr-2506-1/4.402.2": "us-co/regulation/10-ccr-2506-1/4.402.2"
+  }
+}

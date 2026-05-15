@@ -17,6 +17,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -25,6 +26,48 @@ from typing import Literal
 import numpy as np
 import orjson
 from ruamel.yaml import YAML
+
+
+# --- Bounded LRU for request-bytes caches -----------------------------------
+#
+# Each cache entry is the encoded engine input — up to ~141 MB for CTC US,
+# ~41 MB for CO SNAP CO. Without a cap, hitting every state for every
+# program would pile ~7 GB of cached bytes into the Modal container's
+# 8 GB. Bound at REQUEST_CACHE_MAX_ENTRIES (worst case ~1.1 GB).
+
+REQUEST_CACHE_MAX_ENTRIES = 8
+
+
+class _BoundedRequestCache:
+    """Tiny LRU keyed by tuple → bytes. Move-to-end on get and put."""
+
+    def __init__(self, max_entries: int = REQUEST_CACHE_MAX_ENTRIES) -> None:
+        self._max = max_entries
+        self._d: OrderedDict[tuple, bytes] = OrderedDict()
+
+    def get(self, key: tuple) -> bytes | None:
+        v = self._d.get(key)
+        if v is not None:
+            self._d.move_to_end(key)
+        return v
+
+    def __contains__(self, key: tuple) -> bool:
+        return key in self._d
+
+    def __getitem__(self, key: tuple) -> bytes:
+        v = self._d[key]
+        self._d.move_to_end(key)
+        return v
+
+    def __setitem__(self, key: tuple, value: bytes) -> None:
+        if key in self._d:
+            self._d.move_to_end(key)
+        self._d[key] = value
+        while len(self._d) > self._max:
+            self._d.popitem(last=False)
+
+    def __len__(self) -> int:
+        return len(self._d)
 
 from ..data.ecps_loader import EcpsBatch, TaxUnitBatch
 from ..project.co_snap import CoSnapProjection, project as project_co_snap
@@ -407,7 +450,7 @@ def _ctc_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, 
     return out, scratch
 
 
-_CTC_REQUEST_CACHE: dict[tuple, bytes] = {}
+_CTC_REQUEST_CACHE = _BoundedRequestCache()
 
 
 def _build_ctc_request_bytes(
@@ -617,7 +660,7 @@ def _compile(program_yaml: Path, output_json: Path) -> None:
 
 # --- Execute -----------------------------------------------------------------
 
-_CO_SNAP_REQUEST_CACHE: dict[tuple, bytes] = {}
+_CO_SNAP_REQUEST_CACHE = _BoundedRequestCache()
 
 
 def _execute_compiled(

@@ -49,7 +49,7 @@ export interface Override {
 }
 
 export interface MicrosimRequest {
-  program: "co-snap" | "federal-income-tax";
+  program: "co-snap" | "federal-income-tax" | "federal-ctc";
   state: string;
   year: number;
   overrides: Override[];
@@ -61,6 +61,7 @@ export interface PeComparison {
   dataset: string;
   federal_income_tax: PeProgramNumbers | null;
   co_snap: PeProgramNumbers | null;
+  federal_ctc: PeProgramNumbers | null;
   errors: string[];
 }
 

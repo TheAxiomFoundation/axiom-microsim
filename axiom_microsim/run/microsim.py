@@ -32,6 +32,7 @@ from ..project.federal_income_tax import (
     FedIncomeTaxProjection,
     project as project_federal_income_tax,
 )
+from ..project.federal_ctc import FedCtcProjection, project as project_federal_ctc
 
 
 # --- Locations ---------------------------------------------------------------
@@ -60,6 +61,24 @@ CO_SNAP_BASE_SCHEMA = ARTIFACTS_DIR / "co-snap-base.json"
 # rev-proc bracket parameters. Has no synthetic-program slug — we use
 # the natural module IDs.
 FED_INCOME_TAX_PROGRAM_REL = "statutes/26/1/j.yaml"
+
+# §24(h) Child Tax Credit — TaxUnit-rooted, year period.
+FED_CTC_PROGRAM_REL = "statutes/26/24/h.yaml"
+FED_CTC_RELATION_NAME = "us:statutes/26/24/h#relation.dependent_of_tax_unit"
+
+FED_CTC_OUTPUT_IDS: dict[str, str] = {
+    "ctc_maximum_before_phase_out_under_subsection_h":
+        "us:statutes/26/24/h#ctc_maximum_before_phase_out_under_subsection_h",
+    "ctc_qualifying_children_under_subsection_h":
+        "us:statutes/26/24/h#ctc_qualifying_children_under_subsection_h",
+    "ctc_other_dependents_under_subsection_h":
+        "us:statutes/26/24/h#ctc_other_dependents_under_subsection_h",
+    "ctc_phase_out_threshold_under_subsection_h":
+        "us:statutes/26/24/h#ctc_phase_out_threshold_under_subsection_h",
+    "ctc_refundable_maximum_under_subsection_h":
+        "us:statutes/26/24/h#ctc_refundable_maximum_under_subsection_h",
+}
+FED_CTC_DEFAULT_OUTPUTS: tuple[str, ...] = tuple(FED_CTC_OUTPUT_IDS)
 
 CO_SNAP_RELATION_NAME = "us:statutes/7/2012/j#relation.member_of_household"
 
@@ -158,6 +177,38 @@ def run_co_snap(
     )
 
 
+def run_federal_ctc(
+    batch: TaxUnitBatch,
+    *,
+    period_year: int = 2026,
+    overrides: list[ParameterOverride] | None = None,
+    outputs: tuple[str, ...] = FED_CTC_DEFAULT_OUTPUTS,
+) -> "MicrosimResult":
+    """Execute the §24(h) CTC RuleSpec module over an ECPS tax-unit batch.
+
+    All §24(h) computation lives in rules-us/statutes/26/24/h.yaml; this
+    function only orchestrates: project → compile → run-compiled → decode.
+    """
+    projection = project_federal_ctc(batch, period_year=period_year)
+    artifact_path, scratch = _ctc_artifact_for(overrides)
+    try:
+        out = _execute_ctc(projection, artifact_path, period_year, outputs)
+    finally:
+        if scratch is not None:
+            shutil.rmtree(scratch, ignore_errors=True)
+            artifact_path.unlink(missing_ok=True)
+
+    return MicrosimResult(
+        program="federal-ctc",
+        state=batch.state,
+        period_year=period_year,
+        n_households=projection.n_tax_units,
+        n_persons=batch.n_persons,
+        household_weight=batch.tax_unit_weight,
+        outputs=out,
+    )
+
+
 def run_federal_income_tax(
     batch: TaxUnitBatch,
     *,
@@ -245,6 +296,129 @@ def _artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path
     out = ARTIFACTS_DIR / f".tmp-{scratch.name}.compiled.json"
     _compile(dst_us_co / CO_SNAP_PROGRAM_REL, out)
     return out, scratch
+
+
+def _ctc_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path | None]:
+    """Compile §24(h) (with optional reform overrides) and return artifact path."""
+    program_path = RULES_US_DIR / FED_CTC_PROGRAM_REL
+    if not overrides:
+        baseline = ARTIFACTS_DIR / "federal-ctc.compiled.json"
+        if not baseline.exists():
+            ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+            _compile(program_path, baseline)
+        return baseline, None
+
+    if not RULES_US_DIR.exists():
+        raise FileNotFoundError(f"rules-us missing at {RULES_US_DIR}")
+    scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-ctc-"))
+    dst = scratch / "rules-us"
+    shutil.copytree(RULES_US_DIR, dst, symlinks=False)
+    for ov in overrides:
+        if ov.repo != "rules-us":
+            raise ValueError(f"federal-ctc overrides must target rules-us, got {ov.repo}")
+        _patch_yaml(dst / ov.file_relative, ov)
+
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    out = ARTIFACTS_DIR / f".tmp-{scratch.name}.compiled.json"
+    _compile(dst / FED_CTC_PROGRAM_REL, out)
+    return out, scratch
+
+
+def _execute_ctc(
+    projection: FedCtcProjection,
+    artifact_path: Path,
+    period_year: int,
+    output_names: tuple[str, ...],
+) -> dict[str, np.ndarray]:
+    """Build a CompiledExecutionRequest for §24(h) and run it."""
+    interval = {"start": f"{period_year}-01-01", "end": f"{period_year}-12-31"}
+    period = {"period_kind": "tax_year", "start": interval["start"], "end": interval["end"]}
+    output_ids = [FED_CTC_OUTPUT_IDS[n] for n in output_names]
+
+    inputs: list[dict] = []
+    relations: list[dict] = []
+    queries: list[dict] = []
+
+    # Tax-unit inputs and queries.
+    for tu_idx in range(projection.n_tax_units):
+        tu_id = f"tu{tu_idx}"
+        for full_id, column in projection.tax_unit_inputs.items():
+            inputs.append({
+                "name": full_id, "entity": "TaxUnit", "entity_id": tu_id,
+                "interval": interval, "value": _scalar_value(column[tu_idx]),
+            })
+        queries.append({"entity_id": tu_id, "period": period, "outputs": output_ids})
+
+    # Person inputs (sorted by tax unit per projection.person_sort) +
+    # dependent_of_tax_unit relation tuples.
+    sort = projection.person_sort
+    # The sort order makes person index `i` belong to a contiguous tax-unit
+    # block; we recompute the (tu, position-in-tu) for each person.
+    pos_in_sorted = np.arange(projection.n_persons)
+    # For each tax unit, persons are at offsets[tu]..offsets[tu+1].
+    # Map sorted person idx → tu idx via searchsorted on offsets.
+    tu_for_person = np.searchsorted(projection.relation_offsets, pos_in_sorted, side="right") - 1
+
+    for sorted_p_idx in range(projection.n_persons):
+        person_id = f"p{sorted_p_idx}"
+        tu_idx = int(tu_for_person[sorted_p_idx])
+        tu_id = f"tu{tu_idx}"
+        for full_id, column in projection.person_inputs.items():
+            inputs.append({
+                "name": full_id, "entity": "Person", "entity_id": person_id,
+                "interval": interval, "value": _scalar_value(column[sorted_p_idx]),
+            })
+        # Engine resolves §24(h)'s ssn / filing-status slots per-person too
+        # (no entity binding in the spec). Duplicate the tax-unit values
+        # onto each person.
+        for full_id, column in projection.tax_unit_inputs.items():
+            inputs.append({
+                "name": full_id, "entity": "Person", "entity_id": person_id,
+                "interval": interval, "value": _scalar_value(column[tu_idx]),
+            })
+        relations.append({
+            "name": FED_CTC_RELATION_NAME,
+            # Compiled relation has related_slot=0 (Person), current_slot=1
+            # (TaxUnit) for the count_related expression — tuple position
+            # 0 must be the Person, position 1 the TaxUnit. The YAML
+            # `arguments: [TaxUnit, Person]` describes the predicate, not
+            # the slot order at execution.
+            "tuple": [person_id, tu_id],
+            "interval": interval,
+        })
+
+    request = {
+        "mode": "fast",
+        "dataset": {"inputs": inputs, "relations": relations},
+        "queries": queries,
+    }
+
+    proc = subprocess.run(
+        [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
+        input=json.dumps(request), text=True, capture_output=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"engine failed:\n{proc.stderr.strip()[:1500]}")
+    response = json.loads(proc.stdout)
+
+    id_to_name = {v: k for k, v in FED_CTC_OUTPUT_IDS.items()}
+    arrays = {n: np.zeros(projection.n_tax_units, dtype=np.float64) for n in output_names}
+    for qr in response["results"]:
+        eid = qr["entity_id"]
+        if not eid.startswith("tu"):
+            continue
+        idx = int(eid[2:])
+        for key, out in qr["outputs"].items():
+            name = id_to_name.get(key, key)
+            if name not in arrays:
+                continue
+            if out["kind"] == "scalar":
+                v = out["value"]
+                if v["kind"] in ("decimal", "integer"):
+                    arrays[name][idx] = float(v["value"])
+                elif v["kind"] == "bool":
+                    arrays[name][idx] = 1.0 if v["value"] else 0.0
+    return arrays
 
 
 def _fed_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path | None]:

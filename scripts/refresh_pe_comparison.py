@@ -40,6 +40,13 @@ AXIOM_CO_SNAP_2026 = {
     "axiom_avg_monthly_benefit": 452,
 }
 
+AXIOM_FED_CTC_US_2026 = {
+    "axiom_total_annual_cost": 156_000_000_000.0,
+    "axiom_n_tax_units": 30_114,
+    "axiom_weighted_recipients": 47_600_000,
+    "axiom_avg_per_recipient": 3_278,
+}
+
 ECPS_HF_PATH = "hf://policyengine/policyengine-us-data/enhanced_cps_2024.h5"
 
 
@@ -149,6 +156,13 @@ def main() -> int:
         import traceback
         traceback.print_exc()
         payload["errors"].append(f"federal_income_tax: {exc}")
+
+    try:
+        payload["federal_ctc"] = compute_pe_federal_ctc(sim, year=2026)
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        payload["errors"].append(f"federal_ctc: {exc}")
 
     try:
         payload["co_snap"] = compute_pe_co_snap(sim, year=2026)

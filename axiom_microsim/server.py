@@ -25,6 +25,7 @@ from .data.ecps_loader import load_state, load_state_tax_units
 from .run.microsim import (
     ParameterOverride,
     run_co_snap,
+    run_federal_ctc,
     run_federal_income_tax,
 )
 
@@ -53,7 +54,7 @@ class OverrideIn(BaseModel):
 
 
 class MicrosimRequest(BaseModel):
-    program: Literal["co-snap", "federal-income-tax"] = "co-snap"
+    program: Literal["co-snap", "federal-income-tax", "federal-ctc"] = "co-snap"
     state: str = "CO"
     year: int = 2026
     overrides: list[OverrideIn] = Field(default_factory=list)
@@ -124,6 +125,8 @@ def microsim(req: MicrosimRequest) -> MicrosimResponse:
         return _run_co_snap(req, overrides)
     if req.program == "federal-income-tax":
         return _run_federal_income_tax(req, overrides)
+    if req.program == "federal-ctc":
+        return _run_federal_ctc(req, overrides)
     raise HTTPException(400, f"unknown program {req.program!r}")
 
 
@@ -227,6 +230,75 @@ def _run_federal_income_tax(
             baseline_annual_cost=annual_revenue,
             reform_annual_cost=ref_revenue,
             delta_annual_cost=ref_revenue - annual_revenue,
+            households_winners=win_w,
+            households_losers=lose_w,
+            households_unchanged=float(weight.sum()) - win_w - lose_w,
+            households_total_weighted=float(weight.sum()),
+            average_winner_gain_monthly=avg_gain,
+            average_loser_loss_monthly=avg_loss,
+        )
+
+    return response
+
+
+CTC_OUTPUT = "ctc_maximum_before_phase_out_under_subsection_h"
+
+
+def _run_federal_ctc(req: MicrosimRequest, overrides: list[ParameterOverride]) -> MicrosimResponse:
+    try:
+        batch = load_state_tax_units(req.state)
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    baseline = run_federal_ctc(batch, period_year=req.year)
+    base_credit = np.asarray(baseline.outputs[CTC_OUTPUT], dtype=np.float64)
+    weight = baseline.household_weight
+
+    annual_cost = float((base_credit * weight).sum())
+    has_credit = base_credit > 0
+    weighted_recipients = float(weight[has_credit].sum())
+    avg = (
+        float((base_credit[has_credit] * weight[has_credit]).sum() / weighted_recipients)
+        if weighted_recipients > 0 else 0.0
+    )
+
+    deciles = _tax_deciles(base_credit, weight)
+
+    response = MicrosimResponse(
+        program=baseline.program,
+        state=baseline.state,
+        period_year=baseline.period_year,
+        n_households_sampled=baseline.n_households,
+        n_persons_sampled=baseline.n_persons,
+        households_total_weighted=float(weight.sum()),
+        baseline=BaselineOut(
+            annual_cost=annual_cost,
+            monthly_cost=annual_cost / 12,
+            households_with_benefit=weighted_recipients,
+            average_monthly_benefit=avg,
+            decile_distribution=deciles,
+        ),
+    )
+
+    if overrides:
+        reform = run_federal_ctc(batch, period_year=req.year, overrides=overrides)
+        ref_credit = np.asarray(reform.outputs[CTC_OUTPUT], dtype=np.float64)
+        ref_cost = float((ref_credit * weight).sum())
+        delta = ref_credit - base_credit
+
+        # CTC reform semantics: gainers receive MORE credit (delta > 0),
+        # losers receive LESS (delta < 0). Same as SNAP framing.
+        gainers = delta > 1.0
+        losers = delta < -1.0
+        win_w = float(weight[gainers].sum())
+        lose_w = float(weight[losers].sum())
+        avg_gain = float((delta[gainers] * weight[gainers]).sum() / win_w) if win_w else 0.0
+        avg_loss = float((-delta[losers] * weight[losers]).sum() / lose_w) if lose_w else 0.0
+
+        response.reform = ReformOut(
+            baseline_annual_cost=annual_cost,
+            reform_annual_cost=ref_cost,
+            delta_annual_cost=ref_cost - annual_cost,
             households_winners=win_w,
             households_losers=lose_w,
             households_unchanged=float(weight.sum()) - win_w - lose_w,

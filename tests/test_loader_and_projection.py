@@ -16,6 +16,10 @@ import pytest
 
 from axiom_microsim.data.ecps_loader import load_state, sum_person_to_household
 from axiom_microsim.project.co_snap import project
+from axiom_microsim.run.microsim import (
+    FED_SNAP_EXCESS_SHELTER_INPUT,
+    _build_compiled_request,
+)
 
 
 ECPS_PATH = Path(os.environ.get("AXIOM_ECPS_PATH", str(Path.home() / "Downloads" / "enhanced_cps_2024.h5")))
@@ -70,3 +74,28 @@ def test_sum_person_to_household_basic() -> None:
     person_household_index = np.array([0, 0, 1, 1, 2], dtype=np.int64)
     out = sum_person_to_household(person_values, person_household_index, 3)
     np.testing.assert_array_equal(out, [30, 70, 50])
+
+
+@requires_ecps
+def test_compiled_request_can_bind_federal_shelter_bridge() -> None:
+    batch = load_state("CO")
+    proj = project(batch)
+    values = np.arange(proj.n_households, dtype=np.float64)
+    request = _build_compiled_request(
+        proj,
+        2026,
+        ["us-co:regulations/10-ccr-2506-1/4.207.2#snap_allotment"],
+        extra_household_inputs={FED_SNAP_EXCESS_SHELTER_INPUT: values},
+    )
+
+    matched = [
+        row
+        for row in request["dataset"]["inputs"]
+        if row["name"] == FED_SNAP_EXCESS_SHELTER_INPUT
+    ]
+    assert len(matched) == proj.n_households
+    assert matched[0]["value"] == {"kind": "decimal", "value": "0.000000"}
+    assert matched[-1]["value"] == {
+        "kind": "decimal",
+        "value": f"{float(proj.n_households - 1):.6f}",
+    }

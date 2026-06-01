@@ -30,7 +30,7 @@ import modal
 app = modal.App("axiom-microsim")
 
 # Bump when any pinned SHA below changes so the layer rebuilds.
-ENGINE_VERSION = "v0.2.1-3-programs"
+ENGINE_VERSION = "v0.2.4-co-snap-artifact"
 
 # Pinned SHAs.
 # rules-us at current main — has §1(j), §24(h), §32, §63 etc. that we need.
@@ -39,6 +39,7 @@ ENGINE_VERSION = "v0.2.1-3-programs"
 AXIOM_RULES_ENGINE_SHA = "f2412104e45c49d5b90818da38211fac70419d52"
 RULESPEC_US_SHA = "d9a03f172d5d2753ec3557b4e56f778f7f72b819"
 RULESPEC_US_CO_SHA = "ba00673d73c19f262d542cfa597b0b365a1313b7"
+CO_SNAP_PROGRAM_REL = "policies/cdhs/snap/fy-2026-benefit-calculation.yaml"
 
 PROGRAMS_TO_COMPILE: dict[str, tuple[str, str]] = {
     # slug → (in-image dir, program path within repo)
@@ -46,7 +47,7 @@ PROGRAMS_TO_COMPILE: dict[str, tuple[str, str]] = {
     # commit b95c73f ("Rename RuleSpec engine repo bindings"). Even
     # though the GitHub repos are named `rules-us` / `rules-us-co`, the
     # engine's import resolver looks for `rulespec-{prefix}` siblings.
-    "co-snap": ("rulespec-us-co", "policies/cdhs/snap/fy-2026-benefit-calculation.yaml"),
+    "co-snap": ("rulespec-us-co", CO_SNAP_PROGRAM_REL),
     "federal-income-tax": ("rulespec-us", "statutes/26/1/j.yaml"),
     "federal-ctc": ("rulespec-us", "statutes/26/24/h.yaml"),
 }
@@ -91,6 +92,11 @@ image = (
         "mkdir -p /opt/artifacts",
         *_compile_cmds,
     )
+    .add_local_dir(
+        "engine/artifacts", "/opt/artifacts",
+        ignore=["federal-*.compiled.json"],
+        copy=True,
+    )
     .pip_install(
         "fastapi>=0.110",
         "uvicorn>=0.27",
@@ -115,13 +121,20 @@ image = (
     )
     .add_local_dir(
         ".", "/opt/axiom-microsim",
-        ignore=["**/node_modules", "**/.next", "web/**", ".venv/**", "engine/**"],
+        ignore=[
+            ".git/**",
+            "**/node_modules",
+            "**/.next",
+            "web/**",
+            ".venv/**",
+            "engine/**",
+        ],
         # copy=True so we can run `pip install /opt/axiom-microsim` after.
         # Without it Modal mounts the dir at container startup, but build
         # steps can't see it.
         copy=True,
     )
-    .run_commands("pip install /opt/axiom-microsim")
+    .run_commands("pip install --ignore-requires-python /opt/axiom-microsim")
     .env({
         "AXIOM_ARTIFACTS_DIR": "/opt/artifacts",
         "AXIOM_RULES_US_DIR": "/opt/rulespec-us",

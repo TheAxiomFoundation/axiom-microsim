@@ -192,6 +192,13 @@ DEFAULT_OUTPUT_IDS: dict[str, str] = {
 }
 DEFAULT_OUTPUTS: tuple[str, ...] = tuple(DEFAULT_OUTPUT_IDS)
 
+CO_SNAP_EXCESS_SHELTER_OUTPUT = (
+    "us-co:regulations/10-ccr-2506-1/4.407.3#excess_shelter_deduction"
+)
+FED_SNAP_EXCESS_SHELTER_INPUT = (
+    "us:statutes/7/2014/e/6/A#input.snap_excess_shelter_deduction"
+)
+
 
 def run_co_snap(
     batch: EcpsBatch,
@@ -684,6 +691,19 @@ def _execute_compiled(
         [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
         input=request_bytes, capture_output=True,
     )
+    if (
+        proc.returncode != 0
+        and b"missing input `snap_excess_shelter_deduction`" in proc.stderr
+    ):
+        request_bytes = _build_co_snap_shelter_bridge_request_bytes(
+            projection, artifact_path, period_year, output_ids
+        )
+        if cache_key is not None:
+            _CO_SNAP_REQUEST_CACHE[cache_key] = request_bytes
+        proc = subprocess.run(
+            [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
+            input=request_bytes, capture_output=True,
+        )
     if proc.returncode != 0:
         raise RuntimeError(f"engine failed:\n{proc.stderr.strip()}")
     response = orjson.loads(proc.stdout)
@@ -691,10 +711,53 @@ def _execute_compiled(
     return _collect_outputs(response, projection.n_households, output_names, id_to_name)
 
 
+def _build_co_snap_shelter_bridge_request_bytes(
+    projection: CoSnapProjection,
+    artifact_path: Path,
+    period_year: int,
+    output_ids: list[str],
+) -> bytes:
+    """Bind CO's shelter deduction into the imported federal SNAP input.
+
+    The pinned rules-us module `7/2014/e/6/A` exposes
+    `snap_excess_shelter_deduction` as a module-local input. Colorado computes
+    the value as `excess_shelter_deduction`, so if the compiled artifact asks
+    for the federal input we compute the Colorado output first and retry with
+    the federal input populated.
+    """
+    bridge_request = _build_compiled_request(
+        projection, period_year, [CO_SNAP_EXCESS_SHELTER_OUTPUT]
+    )
+    bridge_proc = subprocess.run(
+        [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
+        input=orjson.dumps(bridge_request), capture_output=True,
+    )
+    if bridge_proc.returncode != 0:
+        raise RuntimeError(
+            f"engine failed while computing CO SNAP shelter bridge:\n"
+            f"{bridge_proc.stderr.strip()}"
+        )
+    bridge_response = orjson.loads(bridge_proc.stdout)
+    shelter = _collect_outputs(
+        bridge_response,
+        projection.n_households,
+        ("excess_shelter_deduction",),
+        {CO_SNAP_EXCESS_SHELTER_OUTPUT: "excess_shelter_deduction"},
+    )["excess_shelter_deduction"]
+    request = _build_compiled_request(
+        projection,
+        period_year,
+        output_ids,
+        extra_household_inputs={FED_SNAP_EXCESS_SHELTER_INPUT: shelter},
+    )
+    return orjson.dumps(request)
+
+
 def _build_compiled_request(
     proj: CoSnapProjection,
     period_year: int,
     output_ids: list[str],
+    extra_household_inputs: dict[str, np.ndarray] | None = None,
 ) -> dict:
     # SNAP is calculated monthly. Use January of the requested year as the
     # representative month — the run is interpreted as "what would each
@@ -724,6 +787,8 @@ def _build_compiled_request(
                 else slot.default
             )
             inputs.append(_input_record(_input_id(slot.name), "Household", hh_id, interval, value))
+        for input_id, values in (extra_household_inputs or {}).items():
+            inputs.append(_input_record(input_id, "Household", hh_id, interval, values[h_idx]))
         queries.append({
             "entity_id": hh_id,
             "period": period,

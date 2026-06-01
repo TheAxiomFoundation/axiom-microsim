@@ -256,6 +256,20 @@ class CompareRequest(BaseModel):
     overrides: list[PeOverrideIn] = Field(default_factory=list)
 
 
+class PovertyOut(BaseModel):
+    population_weighted: float
+    in_poverty_weighted: float
+    poverty_rate: float
+
+
+class PovertyImpactOut(BaseModel):
+    baseline_poverty_rate: float
+    reform_poverty_rate: float
+    delta_poverty_rate: float
+    people_lifted_out_of_poverty: float
+    people_falling_into_poverty: float
+
+
 class CompareResponse(BaseModel):
     program: str
     state: str
@@ -265,6 +279,10 @@ class CompareResponse(BaseModel):
     pe_weighted_filers: float
     pe_weighted_total: float
     pe_avg_per_filer: float
+    pe_baseline: BaselineOut | None = None
+    pe_reform: ReformOut | None = None
+    pe_poverty: PovertyOut | None = None
+    pe_poverty_impact: PovertyImpactOut | None = None
     elapsed_seconds: float
 
 
@@ -308,6 +326,10 @@ def compare(req: CompareRequest) -> CompareResponse:
         pe_weighted_filers=data["pe_weighted_filers"],
         pe_weighted_total=data["pe_weighted_total"],
         pe_avg_per_filer=data["pe_avg_per_filer"],
+        pe_baseline=data.get("pe_baseline"),
+        pe_reform=data.get("pe_reform"),
+        pe_poverty=data.get("pe_poverty"),
+        pe_poverty_impact=data.get("pe_poverty_impact"),
         elapsed_seconds=elapsed,
     )
 

@@ -38,6 +38,20 @@ export interface Reform {
   decile_impact: DecileImpactBin[];
 }
 
+export interface Poverty {
+  population_weighted: number;
+  in_poverty_weighted: number;
+  poverty_rate: number;
+}
+
+export interface PovertyImpact {
+  baseline_poverty_rate: number;
+  reform_poverty_rate: number;
+  delta_poverty_rate: number;
+  people_lifted_out_of_poverty: number;
+  people_falling_into_poverty: number;
+}
+
 export interface MicrosimResponse {
   program: string;
   state: string;
@@ -64,6 +78,22 @@ export interface MicrosimRequest {
   state: string;
   year: number;
   overrides: Override[];
+}
+
+export interface CompareResponse {
+  program: string;
+  state: string;
+  year: number;
+  pe_total: number;
+  pe_n_units: number;
+  pe_weighted_filers: number;
+  pe_weighted_total: number;
+  pe_avg_per_filer: number;
+  pe_baseline?: Baseline | null;
+  pe_reform?: Reform | null;
+  pe_poverty?: Poverty | null;
+  pe_poverty_impact?: PovertyImpact | null;
+  elapsed_seconds: number;
 }
 
 export interface PeComparison {

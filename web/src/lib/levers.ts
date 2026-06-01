@@ -70,8 +70,7 @@ const FEDERAL_CTC: Program = {
   id: "federal-ctc",
   name: "Federal Child Tax Credit — IRC §24(h)",
   short: "Federal CTC",
-  blurb:
-    "Child Tax Credit before phase-out under §24(h): qualifying children × $2,200 + other dependents × $500. Computed for every tax unit in the Enhanced CPS.",
+  blurb: "",
   default_state: "US",
   state_choices: ["US", "CA", "TX", "NY", "FL", "CO", "WA", "MA", "IL"],
   headline_label: "Annual CTC cost",
@@ -252,6 +251,15 @@ const FEDERAL_INCOME_TAX: Program = {
           patch_kind: "scale_values",
           multiplier: m,
         },
+      ],
+      peBuild: (m) => [
+        { path: "gov.irs.income.bracket.rates.1", value: 0.10 * m },
+        { path: "gov.irs.income.bracket.rates.2", value: 0.12 * m },
+        { path: "gov.irs.income.bracket.rates.3", value: 0.22 * m },
+        { path: "gov.irs.income.bracket.rates.4", value: 0.24 * m },
+        { path: "gov.irs.income.bracket.rates.5", value: 0.32 * m },
+        { path: "gov.irs.income.bracket.rates.6", value: 0.35 * m },
+        { path: "gov.irs.income.bracket.rates.7", value: 0.37 * m },
       ],
     },
     {

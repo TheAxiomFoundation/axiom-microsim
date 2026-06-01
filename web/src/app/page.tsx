@@ -26,6 +26,7 @@ const initial: RunState = { data: null, loadingMs: null, startedAt: null, error:
 
 interface PeState {
   total: number | null;
+  baselineTotal: number | null;
   filers: number | null;
   avg: number | null;
   loadingMs: number | null;
@@ -33,7 +34,7 @@ interface PeState {
   error: string | null;
 }
 const peInitial: PeState = {
-  total: null, filers: null, avg: null,
+  total: null, baselineTotal: null, filers: null, avg: null,
   loadingMs: null, startedAt: null, error: null,
 };
 
@@ -47,17 +48,18 @@ export default function Page() {
   const [reform, setReform] = useState<RunState>(initial);
   const [pe, setPe] = useState<PeState>(peInitial);
   const [peReform, setPeReform] = useState<PeState>(peInitial);
+  const [runPeSideBySide, setRunPeSideBySide] = useState(false);
   const [now, setNow] = useState(Date.now());
 
   // Session caches keyed by `program|state|year`. Switching programs or
   // scopes is now free if we've already computed that combination.
   // Refs (not state) so writes don't trigger renders.
   const baselineCache = useRef<Map<string, MicrosimResponse>>(new Map());
-  const peCache = useRef<Map<string, { total: number; filers: number; avg: number; loadingMs: number }>>(
+  const peCache = useRef<Map<string, { total: number; baselineTotal: number | null; filers: number; avg: number; loadingMs: number }>>(
     new Map(),
   );
   // Reform-PE cache keyed by (program|state|year|appliedOverridesHash).
-  const peReformCache = useRef<Map<string, { total: number; filers: number; avg: number; loadingMs: number }>>(
+  const peReformCache = useRef<Map<string, { total: number; baselineTotal: number | null; filers: number; avg: number; loadingMs: number }>>(
     new Map(),
   );
 
@@ -104,11 +106,12 @@ export default function Page() {
     if (
       baseline.startedAt === null &&
       reform.startedAt === null &&
-      pe.startedAt === null
+      pe.startedAt === null &&
+      peReform.startedAt === null
     ) return;
     const id = setInterval(() => setNow(Date.now()), 200);
     return () => clearInterval(id);
-  }, [baseline.startedAt, reform.startedAt, pe.startedAt]);
+  }, [baseline.startedAt, reform.startedAt, pe.startedAt, peReform.startedAt]);
 
   const runMicrosim = useCallback(
     async (kind: "baseline" | "reform", values: Record<string, number>) => {
@@ -145,55 +148,67 @@ export default function Page() {
     [programId, state, program.levers],
   );
 
-  /** Build PE overrides from the currently-applied lever values, using
-   *  each lever's optional peBuild translation. Returns null if no
-   *  reform is applied or no lever has a PE mapping. */
-  const peReformOverrides = useMemo(() => {
+  const buildPeOverrides = useCallback((values: Record<string, number>) => {
     const out: { path: string; value: number }[] = [];
     for (const l of program.levers) {
-      const v = applied[l.id];
+      const v = values[l.id];
       if (v === undefined || v === l.baseline) continue;
       if (!l.peBuild) continue;
       out.push(...l.peBuild(v));
     }
     return out.length ? out : null;
-  }, [applied, program.levers]);
+  }, [program.levers]);
+
+  /** Build PE overrides from the currently-applied lever values, using
+   *  each lever's optional peBuild translation. Returns null if no
+   *  reform is applied or no lever has a PE mapping. */
+  const peReformOverrides = useMemo(() => buildPeOverrides(applied), [applied, buildPeOverrides]);
 
   const reformCacheKey = useMemo(() => {
     if (!peReformOverrides) return null;
     return cacheKey(programId, state, YEAR) + "|" + JSON.stringify(peReformOverrides);
   }, [programId, state, peReformOverrides]);
 
-  const runPeReform = useCallback(async () => {
-    if (!peReformOverrides || !reformCacheKey) return;
+  const runPeReform = useCallback(async (values: Record<string, number> = applied) => {
+    const overrides = buildPeOverrides(values);
+    if (!overrides) {
+      setPeReform({
+        total: null, baselineTotal: null, filers: null, avg: null,
+        loadingMs: null, startedAt: null,
+        error: "No PolicyEngine mapping is defined for the moved sliders.",
+      });
+      return;
+    }
+    const key = cacheKey(programId, state, YEAR) + "|" + JSON.stringify(overrides);
     const startedAt = Date.now();
-    setPeReform({ total: null, filers: null, avg: null, loadingMs: 0, startedAt, error: null });
+    setPeReform({ total: null, baselineTotal: null, filers: null, avg: null, loadingMs: 0, startedAt, error: null });
     try {
       const r = await fetch("/api/compare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          program: programId, state, year: YEAR, overrides: peReformOverrides,
+          program: programId, state, year: YEAR, overrides,
         }),
       });
       if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
       const data = await r.json();
       const result = {
         total: data.pe_total as number,
+        baselineTotal: (data.pe_reform?.baseline_annual_cost ?? null) as number | null,
         filers: data.pe_weighted_filers as number,
         avg: data.pe_avg_per_filer as number,
         loadingMs: Date.now() - startedAt,
       };
-      peReformCache.current.set(reformCacheKey, result);
+      peReformCache.current.set(key, result);
       setPeReform({ ...result, startedAt: null, error: null });
     } catch (e) {
       setPeReform({
-        total: null, filers: null, avg: null,
+        total: null, baselineTotal: null, filers: null, avg: null,
         loadingMs: null, startedAt: null,
         error: String((e as Error).message ?? e),
       });
     }
-  }, [programId, state, peReformOverrides, reformCacheKey]);
+  }, [applied, buildPeOverrides, programId, state]);
 
   // Hydrate reform-PE from cache when applied changes.
   useEffect(() => {
@@ -220,6 +235,7 @@ export default function Page() {
       const data = await r.json();
       const peResult = {
         total: data.pe_total as number,
+        baselineTotal: (data.pe_baseline?.annual_cost ?? data.pe_total ?? null) as number | null,
         filers: data.pe_weighted_filers as number,
         avg: data.pe_avg_per_filer as number,
         loadingMs: Date.now() - startedAt,
@@ -228,28 +244,23 @@ export default function Page() {
       setPe({ ...peResult, startedAt: null, error: null });
     } catch (e) {
       setPe({
-        total: null, filers: null, avg: null,
+        total: null, baselineTotal: null, filers: null, avg: null,
         loadingMs: null, startedAt: null,
         error: String((e as Error).message ?? e),
       });
     }
   }, [programId, state]);
 
-  // Compute baseline only if we don't already have it cached. Skip if the
-  // current state isn't valid for this program — a state-reset effect is
-  // about to fire setState(default_state) and re-trigger this with a
-  // valid scope. (Happens when toggling from a national program to one
-  // that's state-only, like CO SNAP.)
-  useEffect(() => {
+  const onRunBaseline = () => {
     if (!program.state_choices.includes(state)) return;
-    if (baselineCache.current.has(cacheKey(programId, state, YEAR))) return;
     void runMicrosim("baseline", initialDraft(programId));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [programId, state]);
+    if (runPeSideBySide) void runPe();
+  };
 
   const onRunReform = () => {
     if (!draftReforming) return;
     void runMicrosim("reform", { ...draft });
+    if (runPeSideBySide) void runPeReform({ ...draft });
   };
 
   const baselineRunning = baseline.startedAt !== null;
@@ -262,16 +273,12 @@ export default function Page() {
     <main className="mx-auto max-w-6xl px-6 py-12">
       {/* ---- Title + program/scope switcher ---- */}
       <header className="mb-8 border-b border-rule pb-6">
-        <div className="flex items-center gap-2 font-mono text-[0.7rem] uppercase tracking-eyebrow text-accent">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" />
-          axiom-microsim · FY {YEAR}
-        </div>
-        <h1 className="mt-3 font-serif text-[2.4rem] leading-[1.1] tracking-tight text-ink">
+        <h1 className="font-serif text-[2.4rem] leading-[1.1] tracking-tight text-ink">
           {program.name}.
         </h1>
-        <p className="editorial mt-4 max-w-3xl">{program.blurb}</p>
+        {program.blurb && <p className="editorial mt-4 max-w-3xl">{program.blurb}</p>}
 
-        <div className="mt-5 flex flex-wrap items-center gap-2">
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <span className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
             Program
           </span>
@@ -309,18 +316,49 @@ export default function Page() {
               </select>
             </>
           )}
+
+          <label className="ml-auto inline-flex items-center gap-2 rounded-sm border border-rule bg-paper-elev px-3 py-1.5 text-xs text-ink-secondary">
+            <input
+              type="checkbox"
+              checked={runPeSideBySide}
+              onChange={(e) => setRunPeSideBySide(e.target.checked)}
+              className="h-3.5 w-3.5 accent-accent"
+            />
+            Run PE side-by-side
+          </label>
         </div>
       </header>
 
       {/* ===========================================================
           1 — BASELINE
           =========================================================== */}
-      <SectionHeading number="01" title="Baseline" subtitle="Current law as-is, on the Enhanced CPS." />
+      <SectionHeading number="01" title={`Baseline · FY ${YEAR}`} subtitle="Current law as-is, on the Enhanced CPS." />
 
       <section className="mb-12 space-y-6">
         {baseline.error && (
           <ErrorBox>Baseline error: {baseline.error}</ErrorBox>
         )}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={onRunBaseline}
+            disabled={baselineRunning}
+            className={`rounded-sm px-5 py-2.5 text-sm font-semibold uppercase tracking-eyebrow transition ${
+              baselineRunning
+                ? "cursor-wait bg-accent-hover text-white"
+                : "bg-accent text-white hover:bg-accent-hover"
+            }`}
+          >
+            {baselineRunning
+              ? `Running… ${((now - (baseline.startedAt ?? now)) / 1000).toFixed(1)}s`
+              : baseline.data ? "↻ Re-run baseline" : "▶ Run baseline"}
+          </button>
+          {runPeSideBySide && (
+            <span className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
+              PE will run with baseline
+            </span>
+          )}
+        </div>
 
         <BigStat
           eyebrow={program.headline_label}
@@ -348,7 +386,7 @@ export default function Page() {
         />
 
         <Card title="Distribution by income decile" subtitle={decileSubtitle(programId)}>
-          {baseline.data && (
+          {baseline.data ? (
             <div className="h-72 w-full">
               <DecileChart
                 bins={baseline.data.baseline.decile_distribution}
@@ -356,19 +394,24 @@ export default function Page() {
                 metricSuffix={programId === "co-snap" ? "/mo" : "/yr"}
               />
             </div>
+          ) : (
+            <div className="py-12 text-center text-sm text-ink-muted">
+              Run the baseline to load the distribution.
+            </div>
           )}
         </Card>
 
-        <PePanel
-          pe={pe}
-          running={peRunning}
-          elapsed={peRunning ? (now - (pe.startedAt ?? now)) / 1000 : null}
-          onRun={runPe}
-          axiomBaseline={baseline.data?.baseline.annual_cost}
-          axiomFilers={baseline.data?.baseline.households_with_benefit}
-          axiomAvg={baseline.data?.baseline.average_monthly_benefit}
-          programId={programId}
-        />
+        {(runPeSideBySide || pe.total != null || pe.error || peRunning) && (
+          <PePanel
+            pe={pe}
+            running={peRunning}
+            elapsed={peRunning ? (now - (pe.startedAt ?? now)) / 1000 : null}
+            axiomBaseline={baseline.data?.baseline.annual_cost}
+            axiomFilers={baseline.data?.baseline.households_with_benefit}
+            axiomAvg={baseline.data?.baseline.average_monthly_benefit}
+            programId={programId}
+          />
+        )}
       </section>
 
       {/* ===========================================================
@@ -415,6 +458,11 @@ export default function Page() {
                       ? "Reform up to date"
                       : "▶ Run reform"}
               </button>
+              {runPeSideBySide && draftReforming && (
+                <span className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
+                  PE will run with reform
+                </span>
+              )}
               <button
                 onClick={() => setDraft(initialDraft(programId))}
                 disabled={!draftReforming}
@@ -547,16 +595,15 @@ export default function Page() {
 
             {/* PE comparison for the reform — only if any applied lever
                 has a PE translation. */}
-            {appliedReforming && (
+            {appliedReforming && (runPeSideBySide || peReform.total != null || peReform.error || peReformRunning) && (
               <PeReformPanel
                 pe={peReform}
                 running={peReformRunning}
                 elapsed={peReformRunning ? (now - (peReform.startedAt ?? now)) / 1000 : null}
-                onRun={runPeReform}
                 hasMapping={peReformOverrides != null}
                 axiomReform={reform.data?.reform?.reform_annual_cost}
                 axiomBaseline={reform.data?.reform?.baseline_annual_cost}
-                peBaseline={pe.total}
+                peBaseline={peReform.baselineTotal ?? pe.total}
                 programId={programId}
               />
             )}
@@ -711,13 +758,12 @@ function ErrorBox({ children }: { children: React.ReactNode }) {
 }
 
 function PePanel({
-  pe, running, elapsed, onRun,
+  pe, running, elapsed,
   axiomBaseline, axiomFilers, axiomAvg, programId,
 }: {
   pe: PeState;
   running: boolean;
   elapsed: number | null;
-  onRun: () => void;
   axiomBaseline?: number;
   axiomFilers?: number;
   axiomAvg?: number;
@@ -735,20 +781,12 @@ function PePanel({
             Side-by-side · PolicyEngine
           </div>
           <div className="mt-0.5 text-sm text-ink-secondary">
-            Same dataset, same parameters; cached per program/scope this session.
+            Same dataset, same parameters; runs when PE side-by-side is checked.
           </div>
         </div>
-        <button
-          onClick={onRun}
-          disabled={running}
-          className={`rounded-sm px-3 py-2 font-mono text-xs uppercase tracking-eyebrow transition ${
-            running ? "cursor-wait bg-accent-hover text-white" : "bg-accent text-white hover:bg-accent-hover"
-          }`}
-        >
-          {running
-            ? `Running PE… ${elapsed?.toFixed(1)}s`
-            : hasResult ? "▶ Re-run PE" : "▶ Run PE comparison"}
-        </button>
+        <div className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
+          {running ? `Running PE… ${elapsed?.toFixed(1)}s` : hasResult ? "PE complete" : "PE pending"}
+        </div>
       </div>
 
       {pe.error && <ErrorBox>{pe.error}</ErrorBox>}
@@ -807,13 +845,12 @@ function Row({ metric, axiom, pe, ratio }: { metric: string; axiom: string; pe: 
 }
 
 function PeReformPanel({
-  pe, running, elapsed, onRun, hasMapping,
+  pe, running, elapsed, hasMapping,
   axiomReform, axiomBaseline, peBaseline, programId,
 }: {
   pe: PeState;
   running: boolean;
   elapsed: number | null;
-  onRun: () => void;
   hasMapping: boolean;
   axiomReform?: number;
   axiomBaseline?: number;
@@ -835,31 +872,16 @@ function PeReformPanel({
             Side-by-side · PolicyEngine · with this reform
           </div>
           <div className="mt-0.5 text-sm text-ink-secondary">
-            Same parametric reform applied to PE. Cached per slider combo this session.
+            Same parametric reform applied to PE when side-by-side is checked.
           </div>
         </div>
-        <button
-          onClick={onRun}
-          disabled={running || !hasMapping}
-          className={`rounded-sm px-3 py-2 font-mono text-xs uppercase tracking-eyebrow transition ${
-            !hasMapping
-              ? "cursor-not-allowed bg-rule text-ink-muted"
-              : running
-                ? "cursor-wait bg-accent-hover text-white"
-                : "bg-accent text-white hover:bg-accent-hover"
-          }`}
-          title={
-            !hasMapping
-              ? "No PE parameter mapping for the moved sliders yet"
-              : "Run PolicyEngine with the same parametric reform"
-          }
-        >
+        <div className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
           {!hasMapping
             ? "PE mapping not defined"
             : running
               ? `Running PE… ${elapsed?.toFixed(1)}s`
-              : hasResult ? "▶ Re-run PE on reform" : "▶ Run PE on reform"}
-        </button>
+              : hasResult ? "PE complete" : "PE pending"}
+        </div>
       </div>
 
       {pe.error && <ErrorBox>{pe.error}</ErrorBox>}

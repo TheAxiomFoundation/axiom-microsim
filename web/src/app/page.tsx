@@ -332,7 +332,7 @@ export default function Page() {
       {/* ===========================================================
           1 — BASELINE
           =========================================================== */}
-      <SectionHeading number="01" title={`Baseline · FY ${YEAR}`} subtitle="Current law as-is, on the Enhanced CPS." />
+      <SectionHeading number="01" title={`Baseline · FY ${YEAR}`} />
 
       <section className="mb-12 space-y-6">
         {baseline.error && (
@@ -470,16 +470,6 @@ export default function Page() {
               >
                 Reset sliders
               </button>
-              <button
-                onClick={() => {
-                  setReform(initial);
-                  setApplied(initialDraft(programId));
-                }}
-                disabled={!appliedReforming}
-                className="rounded-sm border border-rule px-3 py-2 text-xs text-ink-secondary hover:bg-rule-subtle disabled:cursor-not-allowed disabled:text-ink-muted"
-              >
-                Clear reform
-              </button>
             </div>
 
             {dirty && draftReforming && !reformRunning && (
@@ -497,7 +487,6 @@ export default function Page() {
       <SectionHeading
         number="03"
         title="Reform impact"
-        subtitle="Difference vs the baseline above, weighted to the same population."
       />
 
       <section className="mb-8 space-y-6">

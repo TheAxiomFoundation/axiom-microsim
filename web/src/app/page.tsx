@@ -916,7 +916,7 @@ function PeReformPanel({
 function decileSubtitle(programId: ProgramId): string {
   if (programId === "co-snap")
     return "Households grouped by weighted decile of gross annual income. D1 = lowest income, D10 = highest.";
-  return "Tax units grouped by weighted decile of AGI. D1 = lowest income, D10 = highest.";
+  return "";
 }
 
 function decileMetricLabel(programId: ProgramId): string {

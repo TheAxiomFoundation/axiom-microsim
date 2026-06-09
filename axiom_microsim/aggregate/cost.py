@@ -19,8 +19,8 @@ class CostAggregate:
     total_annual_cost: float
     total_monthly_cost: float
 
-    households_with_benefit: float       # weighted
-    average_monthly_benefit: float       # per receiving household
+    households_with_benefit: float  # weighted
+    average_monthly_benefit: float  # per receiving household
     households_total_weighted: float
 
 
@@ -37,8 +37,11 @@ def aggregate(result: MicrosimResult, *, benefit_output: str = "snap_allotment")
     receiving_mask = benefit > 0
     receiving_weight = float(weight[receiving_mask].sum())
 
-    avg = float((benefit[receiving_mask] * weight[receiving_mask]).sum() / receiving_weight) \
-        if receiving_weight > 0 else 0.0
+    avg = (
+        float((benefit[receiving_mask] * weight[receiving_mask]).sum() / receiving_weight)
+        if receiving_weight > 0
+        else 0.0
+    )
 
     return CostAggregate(
         program=result.program,

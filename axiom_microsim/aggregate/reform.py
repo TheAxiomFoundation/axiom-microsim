@@ -17,10 +17,10 @@ class ReformImpact:
 
     baseline_annual_cost: float
     reform_annual_cost: float
-    delta_annual_cost: float          # reform - baseline
+    delta_annual_cost: float  # reform - baseline
 
-    households_winners: float         # weighted; benefit ↑ vs baseline
-    households_losers: float          # weighted; benefit ↓
+    households_winners: float  # weighted; benefit ↑ vs baseline
+    households_losers: float  # weighted; benefit ↓
     households_unchanged: float
     households_total_weighted: float
 
@@ -41,7 +41,9 @@ def compare(
     months_per_year: int = 12,
 ) -> ReformImpact:
     if baseline.n_households != reform.n_households:
-        raise ValueError("baseline and reform have different household counts — same batch required")
+        raise ValueError(
+            "baseline and reform have different household counts — same batch required"
+        )
 
     base_b = np.asarray(baseline.outputs[benefit_output], dtype=np.float64)
     ref_b = np.asarray(reform.outputs[benefit_output], dtype=np.float64)

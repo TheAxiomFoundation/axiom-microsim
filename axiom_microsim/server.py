@@ -12,6 +12,9 @@ Two programs supported:
 from __future__ import annotations
 
 import json
+import os
+import subprocess as _subprocess
+from pathlib import Path as _Path
 from typing import Literal
 
 import numpy as np
@@ -36,6 +39,7 @@ from .run.microsim import (
 
 
 # --- Request / response models ----------------------------------------------
+
 
 class OverrideIn(BaseModel):
     repo: Literal["rules-us", "rules-us-co"]
@@ -67,31 +71,32 @@ class MicrosimRequest(BaseModel):
 
 # --- Shared output shapes ---------------------------------------------------
 
+
 class DecileBinOut(BaseModel):
     decile: int
     income_floor: float
     income_ceiling: float
     households_weighted: float
-    mean_monthly_benefit: float        # for tax: mean annual tax (we reuse the field name)
-    share_receiving: float             # for tax: share with positive liability
+    mean_monthly_benefit: float  # for tax: mean annual tax (we reuse the field name)
+    share_receiving: float  # for tax: share with positive liability
 
 
 class BaselineOut(BaseModel):
-    annual_cost: float                 # for tax: annual revenue
-    monthly_cost: float                # for tax: annual revenue / 12
-    households_with_benefit: float     # for tax: tax units with positive liability
-    average_monthly_benefit: float     # for tax: average annual liability per filer
+    annual_cost: float  # for tax: annual revenue
+    monthly_cost: float  # for tax: annual revenue / 12
+    households_with_benefit: float  # for tax: tax units with positive liability
+    average_monthly_benefit: float  # for tax: average annual liability per filer
     decile_distribution: list[DecileBinOut]
 
 
 class DecileImpactBin(BaseModel):
-    decile: int                       # 1..10
-    income_floor: float                # AGI / gross-income lower edge
-    income_ceiling: float              # upper edge
+    decile: int  # 1..10
+    income_floor: float  # AGI / gross-income lower edge
+    income_ceiling: float  # upper edge
     households_weighted: float
-    mean_delta: float                  # mean per-unit change vs baseline
-    share_winners: float               # weighted share with delta > 0
-    share_losers: float                # weighted share with delta < 0
+    mean_delta: float  # mean per-unit change vs baseline
+    share_winners: float  # weighted share with delta > 0
+    share_losers: float  # weighted share with delta < 0
 
 
 class ReformOut(BaseModel):
@@ -111,7 +116,7 @@ class MicrosimResponse(BaseModel):
     program: str
     state: str
     period_year: int
-    n_households_sampled: int          # for tax: tax units
+    n_households_sampled: int  # for tax: tax units
     n_persons_sampled: int
     households_total_weighted: float
     baseline: BaselineOut
@@ -140,12 +145,13 @@ def health() -> dict[str, str]:
 # "we read $X of qualified dividends and project Y per tax unit" so the
 # slot mapping is checkable.
 
+
 class EcpsColumnStat(BaseModel):
     name: str
-    level: str                  # "person" | "household"
-    weighted_total: float       # weight × value summed
-    weighted_mean: float        # weighted_total / weighted_units
-    nonzero_share: float        # weighted share of units with value > 0
+    level: str  # "person" | "household"
+    weighted_total: float  # weight × value summed
+    weighted_mean: float  # weighted_total / weighted_units
+    nonzero_share: float  # weighted share of units with value > 0
     sample_size: int
 
 
@@ -154,7 +160,7 @@ class EcpsStatsResponse(BaseModel):
     state: str
     n_persons_sample: int
     n_units_sample: int
-    units_label: str            # "tax units" | "households"
+    units_label: str  # "tax units" | "households"
     weighted_units: float
     columns: list[EcpsColumnStat]
 
@@ -166,6 +172,7 @@ def ecps_stats(
 ) -> EcpsStatsResponse:
     if program == "co-snap":
         from .data.ecps_loader import load_state as _load
+
         batch = _load(state)
         units_label = "households"
         n_units = batch.n_households
@@ -173,6 +180,7 @@ def ecps_stats(
         person_idx = batch.person_household_index
     else:
         from .data.ecps_loader import load_state_tax_units as _load_tu
+
         batch = _load_tu(state)
         units_label = "tax units"
         n_units = batch.n_tax_units
@@ -191,21 +199,20 @@ def ecps_stats(
             continue
         v = arr.astype(np.float64)
         weighted_total = float((v * person_weight).sum())
-        weighted_mean = (
-            weighted_total / float(weights.sum()) if weights.sum() else 0.0
-        )
+        weighted_mean = weighted_total / float(weights.sum()) if weights.sum() else 0.0
         nonzero_share = (
-            float(person_weight[v > 0].sum() / person_weight.sum())
-            if person_weight.sum() else 0.0
+            float(person_weight[v > 0].sum() / person_weight.sum()) if person_weight.sum() else 0.0
         )
-        cols.append(EcpsColumnStat(
-            name=name,
-            level="person",
-            weighted_total=weighted_total,
-            weighted_mean=weighted_mean,
-            nonzero_share=nonzero_share,
-            sample_size=int(arr.size),
-        ))
+        cols.append(
+            EcpsColumnStat(
+                name=name,
+                level="person",
+                weighted_total=weighted_total,
+                weighted_mean=weighted_mean,
+                nonzero_share=nonzero_share,
+                sample_size=int(arr.size),
+            )
+        )
     # Sort by weighted_total descending so the biggest sources lead.
     cols.sort(key=lambda c: -c.weighted_total)
 
@@ -225,13 +232,10 @@ def ecps_stats(
 # its own venv (~/policyengine.py/.venv) so we subprocess into it. Slow
 # (~100s) — UI calls this only when the user explicitly clicks.
 
-import os
-import subprocess as _subprocess
-from pathlib import Path as _Path
-
-
 _PE_PYTHON = _Path(
-    os.environ.get("AXIOM_PE_PYTHON", str(_Path.home() / "policyengine.py" / ".venv" / "bin" / "python"))
+    os.environ.get(
+        "AXIOM_PE_PYTHON", str(_Path.home() / "policyengine.py" / ".venv" / "bin" / "python")
+    )
 )
 # When installed as a wheel, __file__ lands in site-packages/ — the
 # scripts/ dir from the source tree isn't there. AXIOM_PE_SCRIPT lets
@@ -295,17 +299,25 @@ def compare(req: CompareRequest) -> CompareResponse:
             f"Set AXIOM_PE_PYTHON or install policyengine_us in a venv there.",
         )
     import time as _time
+
     t0 = _time.time()
     overrides_json = json.dumps([{"path": o.path, "value": o.value} for o in req.overrides])
     proc = _subprocess.run(
         [
-            str(_PE_PYTHON), str(_PE_SCRIPT),
-            "--program", req.program,
-            "--state", req.state,
-            "--year", str(req.year),
-            "--overrides", overrides_json,
+            str(_PE_PYTHON),
+            str(_PE_SCRIPT),
+            "--program",
+            req.program,
+            "--state",
+            req.state,
+            "--year",
+            str(req.year),
+            "--overrides",
+            overrides_json,
         ],
-        capture_output=True, text=True, timeout=600,
+        capture_output=True,
+        text=True,
+        timeout=600,
     )
     elapsed = _time.time() - t0
     if proc.returncode != 0:
@@ -348,6 +360,7 @@ def microsim(req: MicrosimRequest) -> MicrosimResponse:
 
 # --- co-snap path -----------------------------------------------------------
 
+
 def _run_co_snap(req: MicrosimRequest, overrides: list[ParameterOverride]) -> MicrosimResponse:
     try:
         batch = load_state(req.state)
@@ -379,21 +392,27 @@ def _run_co_snap(req: MicrosimRequest, overrides: list[ParameterOverride]) -> Mi
         impact = compare_reform(baseline, reform)
         # Decile of household gross income → mean monthly delta per hh.
         from .data.ecps_loader import sum_person_to_household
+
         income_columns_hh = (
-            "employment_income_before_lsr", "self_employment_income_before_lsr",
-            "taxable_interest_income", "qualified_dividend_income",
-            "non_qualified_dividend_income", "taxable_pension_income",
-            "rental_income", "alimony_income",
+            "employment_income_before_lsr",
+            "self_employment_income_before_lsr",
+            "taxable_interest_income",
+            "qualified_dividend_income",
+            "non_qualified_dividend_income",
+            "taxable_pension_income",
+            "rental_income",
+            "alimony_income",
         )
         agi_hh = np.zeros(batch.n_households, dtype=np.float64)
         for col in income_columns_hh:
             if col in batch.person_columns:
                 agi_hh += sum_person_to_household(
-                    batch.person_columns[col], batch.person_household_index, batch.n_households,
+                    batch.person_columns[col],
+                    batch.person_household_index,
+                    batch.n_households,
                 )
-        delta = (
-            np.asarray(reform.outputs["snap_allotment"], dtype=np.float64)
-            - np.asarray(baseline.outputs["snap_allotment"], dtype=np.float64)
+        delta = np.asarray(reform.outputs["snap_allotment"], dtype=np.float64) - np.asarray(
+            baseline.outputs["snap_allotment"], dtype=np.float64
         )
         decile_bins = _decile_impact(delta, batch.household_weight, agi_hh)
         response.reform = ReformOut(**impact.__dict__, decile_impact=decile_bins)
@@ -424,7 +443,8 @@ def _run_federal_income_tax(
     weighted_filers = float(weight[has_liability].sum())
     avg_per_filer = (
         float((base_tax[has_liability] * weight[has_liability]).sum() / weighted_filers)
-        if weighted_filers > 0 else 0.0
+        if weighted_filers > 0
+        else 0.0
     )
 
     deciles = _decile_by_axis(base_tax, weight, _tax_unit_agi(batch))
@@ -433,14 +453,14 @@ def _run_federal_income_tax(
         program=baseline.program,
         state=baseline.state,
         period_year=baseline.period_year,
-        n_households_sampled=baseline.n_households,   # = n tax units
+        n_households_sampled=baseline.n_households,  # = n tax units
         n_persons_sampled=baseline.n_persons,
         households_total_weighted=float(weight.sum()),
         baseline=BaselineOut(
             annual_cost=annual_revenue,
             monthly_cost=annual_revenue / 12,
             households_with_benefit=weighted_filers,
-            average_monthly_benefit=avg_per_filer,    # mean ANNUAL liability per filer
+            average_monthly_benefit=avg_per_filer,  # mean ANNUAL liability per filer
             decile_distribution=deciles,
         ),
     )
@@ -500,7 +520,8 @@ def _run_federal_ctc(req: MicrosimRequest, overrides: list[ParameterOverride]) -
     weighted_recipients = float(weight[has_credit].sum())
     avg = (
         float((base_credit[has_credit] * weight[has_credit]).sum() / weighted_recipients)
-        if weighted_recipients > 0 else 0.0
+        if weighted_recipients > 0
+        else 0.0
     )
 
     deciles = _decile_by_axis(base_credit, weight, _tax_unit_agi(batch))
@@ -567,7 +588,7 @@ AGI_INCOME_COLUMNS: tuple[str, ...] = (
 )
 
 
-NOISE_FLOOR = 1.0   # per-unit changes smaller than this are treated as 0
+NOISE_FLOOR = 1.0  # per-unit changes smaller than this are treated as 0
 
 
 def _decile_impact(
@@ -596,21 +617,19 @@ def _decile_impact(
         dm = delta[mask]
         total_w = float(wm.sum())
         mean_d = float((dm * wm).sum() / total_w) if total_w else 0.0
-        win_share = (
-            float(wm[dm > NOISE_FLOOR].sum() / total_w) if total_w else 0.0
+        win_share = float(wm[dm > NOISE_FLOOR].sum() / total_w) if total_w else 0.0
+        lose_share = float(wm[dm < -NOISE_FLOOR].sum() / total_w) if total_w else 0.0
+        bins.append(
+            DecileImpactBin(
+                decile=i + 1,
+                income_floor=float(lo) if np.isfinite(lo) else 0.0,
+                income_ceiling=float(hi) if np.isfinite(hi) else float(axis.max()),
+                households_weighted=total_w,
+                mean_delta=mean_d,
+                share_winners=win_share,
+                share_losers=lose_share,
+            )
         )
-        lose_share = (
-            float(wm[dm < -NOISE_FLOOR].sum() / total_w) if total_w else 0.0
-        )
-        bins.append(DecileImpactBin(
-            decile=i + 1,
-            income_floor=float(lo) if np.isfinite(lo) else 0.0,
-            income_ceiling=float(hi) if np.isfinite(hi) else float(axis.max()),
-            households_weighted=total_w,
-            mean_delta=mean_d,
-            share_winners=win_share,
-            share_losers=lose_share,
-        ))
     return bins
 
 
@@ -698,7 +717,7 @@ def _tax_deciles(tax: np.ndarray, weight: np.ndarray) -> list[DecileBinOut]:
                 income_floor=float(lo) if np.isfinite(lo) else 0.0,
                 income_ceiling=float(hi) if np.isfinite(hi) else float(tax.max()),
                 households_weighted=total_w,
-                mean_monthly_benefit=mean_t,        # repurposed: mean annual liability
+                mean_monthly_benefit=mean_t,  # repurposed: mean annual liability
                 share_receiving=share,
             )
         )

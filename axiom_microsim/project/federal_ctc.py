@@ -32,7 +32,7 @@ from ..data.ecps_loader import (
 
 
 ADULT_AGE = 18
-QUALIFYING_CHILD_AGE = 17     # under age 17 → §24(c) qualifying child
+QUALIFYING_CHILD_AGE = 17  # under age 17 → §24(c) qualifying child
 OTHER_DEPENDENT_MAX_AGE = 24  # under 24 → other dependent (§152, child of taxpayer)
 
 
@@ -68,7 +68,7 @@ def project(batch: TaxUnitBatch, *, period_year: int = 2026) -> FedCtcProjection
     # Compute via lexsort: primary key = tax_unit_index, secondary = -age.
     primary = batch.person_tax_unit_index
     secondary = -age
-    order = np.lexsort((secondary, primary))    # sort persons by (tu, -age)
+    order = np.lexsort((secondary, primary))  # sort persons by (tu, -age)
     sorted_tu = primary[order]
     # rank within tax unit: count of preceding persons in the same tu
     same_tu = sorted_tu[1:] == sorted_tu[:-1]
@@ -87,9 +87,9 @@ def project(batch: TaxUnitBatch, *, period_year: int = 2026) -> FedCtcProjection
     persons_per_tu = count_persons_per_tax_unit(batch.person_tax_unit_index).astype(np.int64)
     dependents_per_tu_raw = persons_per_tu - adults_per_tu
     is_joint = adults_per_tu >= 2
-    filing_status = np.where(
-        is_joint, 1, np.where(dependents_per_tu_raw > 0, 3, 0)
-    ).astype(np.int64)
+    filing_status = np.where(is_joint, 1, np.where(dependents_per_tu_raw > 0, 3, 0)).astype(
+        np.int64
+    )
 
     # Per-person role flags
     is_joint_per_person = is_joint[batch.person_tax_unit_index]
@@ -98,9 +98,7 @@ def project(batch: TaxUnitBatch, *, period_year: int = 2026) -> FedCtcProjection
     is_dependent = ~is_head & ~is_spouse
     is_qualifying_child = is_dependent & (age < QUALIFYING_CHILD_AGE)
     is_other_dependent = (
-        is_dependent
-        & (age >= QUALIFYING_CHILD_AGE)
-        & (age < OTHER_DEPENDENT_MAX_AGE)
+        is_dependent & (age >= QUALIFYING_CHILD_AGE) & (age < OTHER_DEPENDENT_MAX_AGE)
     )
 
     # Engine wants `dependent_under_section_152` to be true for both
@@ -121,24 +119,31 @@ def project(batch: TaxUnitBatch, *, period_year: int = 2026) -> FedCtcProjection
 
     # --- Build engine inputs --------------------------------------------------
     person_inputs = {
-        "us:statutes/26/24/h#input.dependent_under_section_152":
-            dependent_152[person_sort].astype(bool),
-        "us:statutes/26/24/h#input.qualifying_child_described_in_subsection_c":
-            is_qualifying_child[person_sort].astype(bool),
-        "us:statutes/26/24/h#input.qualifying_child_ssn_included_on_return":
-            np.ones(batch.n_persons, dtype=bool),
-        "us:statutes/26/24/h#input.qualifying_child_ssn_is_valid_for_subsection_h":
-            np.ones(batch.n_persons, dtype=bool),
-        "us:statutes/26/24/h#input.noncitizen_exception_to_other_dependent_credit_under_subsection_h":
-            np.zeros(batch.n_persons, dtype=bool),
+        "us:statutes/26/24/h#input.dependent_under_section_152": dependent_152[person_sort].astype(
+            bool
+        ),
+        "us:statutes/26/24/h#input.qualifying_child_described_in_subsection_c": is_qualifying_child[
+            person_sort
+        ].astype(bool),
+        "us:statutes/26/24/h#input.qualifying_child_ssn_included_on_return": np.ones(
+            batch.n_persons, dtype=bool
+        ),
+        "us:statutes/26/24/h#input.qualifying_child_ssn_is_valid_for_subsection_h": np.ones(
+            batch.n_persons, dtype=bool
+        ),
+        "us:statutes/26/24/h#input.noncitizen_exception_to_other_dependent_credit_under_subsection_h": np.zeros(
+            batch.n_persons, dtype=bool
+        ),
     }
 
     tax_unit_inputs = {
         "us:statutes/26/24/h#input.filing_status_is_joint_return": (filing_status == 1),
-        "us:statutes/26/24/h#input.taxpayer_or_spouse_ssn_included_on_return":
-            np.ones(n_tu, dtype=bool),
-        "us:statutes/26/24/h#input.taxpayer_or_spouse_ssn_is_valid_for_subsection_h":
-            np.ones(n_tu, dtype=bool),
+        "us:statutes/26/24/h#input.taxpayer_or_spouse_ssn_included_on_return": np.ones(
+            n_tu, dtype=bool
+        ),
+        "us:statutes/26/24/h#input.taxpayer_or_spouse_ssn_is_valid_for_subsection_h": np.ones(
+            n_tu, dtype=bool
+        ),
     }
 
     qualifying_children_per_tu = sum_person_to_tax_unit(

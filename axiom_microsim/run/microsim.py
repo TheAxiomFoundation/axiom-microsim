@@ -27,6 +27,13 @@ import numpy as np
 import orjson
 from ruamel.yaml import YAML
 
+from ..data.ecps_loader import EcpsBatch, TaxUnitBatch
+from ..project.co_snap import CoSnapProjection, project as project_co_snap
+from ..project.federal_ctc import FedCtcProjection, project as project_federal_ctc
+from ..project.federal_income_tax import (
+    FedIncomeTaxProjection,
+    project as project_federal_income_tax,
+)
 
 # --- Bounded LRU for request-bytes caches -----------------------------------
 #
@@ -69,21 +76,15 @@ class _BoundedRequestCache:
     def __len__(self) -> int:
         return len(self._d)
 
-from ..data.ecps_loader import EcpsBatch, TaxUnitBatch
-from ..project.co_snap import CoSnapProjection, project as project_co_snap
-from ..project.federal_income_tax import (
-    FedIncomeTaxProjection,
-    project as project_federal_income_tax,
-)
-from ..project.federal_ctc import FedCtcProjection, project as project_federal_ctc
-
 
 # --- Locations ---------------------------------------------------------------
 
 ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = Path(os.environ.get("AXIOM_ARTIFACTS_DIR", str(ROOT / "engine" / "artifacts")))
 RULES_US_DIR = Path(os.environ.get("AXIOM_RULES_US_DIR", str(ROOT / "engine" / "rules-us")))
-RULES_US_CO_DIR = Path(os.environ.get("AXIOM_RULES_US_CO_DIR", str(ROOT / "engine" / "rules-us-co")))
+RULES_US_CO_DIR = Path(
+    os.environ.get("AXIOM_RULES_US_CO_DIR", str(ROOT / "engine" / "rules-us-co"))
+)
 ENGINE_BIN = Path(
     os.environ.get(
         "AXIOM_RULES_ENGINE_BINARY",
@@ -110,16 +111,11 @@ FED_CTC_PROGRAM_REL = "statutes/26/24/h.yaml"
 FED_CTC_RELATION_NAME = "us:statutes/26/24/h#relation.dependent_of_tax_unit"
 
 FED_CTC_OUTPUT_IDS: dict[str, str] = {
-    "ctc_maximum_before_phase_out_under_subsection_h":
-        "us:statutes/26/24/h#ctc_maximum_before_phase_out_under_subsection_h",
-    "ctc_qualifying_children_under_subsection_h":
-        "us:statutes/26/24/h#ctc_qualifying_children_under_subsection_h",
-    "ctc_other_dependents_under_subsection_h":
-        "us:statutes/26/24/h#ctc_other_dependents_under_subsection_h",
-    "ctc_phase_out_threshold_under_subsection_h":
-        "us:statutes/26/24/h#ctc_phase_out_threshold_under_subsection_h",
-    "ctc_refundable_maximum_under_subsection_h":
-        "us:statutes/26/24/h#ctc_refundable_maximum_under_subsection_h",
+    "ctc_maximum_before_phase_out_under_subsection_h": "us:statutes/26/24/h#ctc_maximum_before_phase_out_under_subsection_h",
+    "ctc_qualifying_children_under_subsection_h": "us:statutes/26/24/h#ctc_qualifying_children_under_subsection_h",
+    "ctc_other_dependents_under_subsection_h": "us:statutes/26/24/h#ctc_other_dependents_under_subsection_h",
+    "ctc_phase_out_threshold_under_subsection_h": "us:statutes/26/24/h#ctc_phase_out_threshold_under_subsection_h",
+    "ctc_refundable_maximum_under_subsection_h": "us:statutes/26/24/h#ctc_refundable_maximum_under_subsection_h",
 }
 FED_CTC_DEFAULT_OUTPUTS: tuple[str, ...] = tuple(FED_CTC_OUTPUT_IDS)
 
@@ -147,6 +143,7 @@ FED_INCOME_TAX_DEFAULT_OUTPUTS: tuple[str, ...] = tuple(FED_INCOME_TAX_OUTPUT_ID
 
 # --- Reform overrides --------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class ParameterOverride:
     """A single parameter patch.
@@ -166,6 +163,7 @@ class ParameterOverride:
 
 
 # --- Result ------------------------------------------------------------------
+
 
 @dataclass
 class MicrosimResult:
@@ -192,12 +190,8 @@ DEFAULT_OUTPUT_IDS: dict[str, str] = {
 }
 DEFAULT_OUTPUTS: tuple[str, ...] = tuple(DEFAULT_OUTPUT_IDS)
 
-CO_SNAP_EXCESS_SHELTER_OUTPUT = (
-    "us-co:regulations/10-ccr-2506-1/4.407.3#excess_shelter_deduction"
-)
-FED_SNAP_EXCESS_SHELTER_INPUT = (
-    "us:statutes/7/2014/e/6/A#input.snap_excess_shelter_deduction"
-)
+CO_SNAP_EXCESS_SHELTER_OUTPUT = "us-co:regulations/10-ccr-2506-1/4.407.3#excess_shelter_deduction"
+FED_SNAP_EXCESS_SHELTER_INPUT = "us:statutes/7/2014/e/6/A#input.snap_excess_shelter_deduction"
 
 
 def run_co_snap(
@@ -212,7 +206,11 @@ def run_co_snap(
     cache_key = ("co-snap", batch.state, period_year, outputs)
     try:
         out = _execute_compiled(
-            projection, artifact_path, period_year, outputs, cache_key=cache_key,
+            projection,
+            artifact_path,
+            period_year,
+            outputs,
+            cache_key=cache_key,
         )
     finally:
         if scratch is not None:
@@ -247,7 +245,11 @@ def run_federal_ctc(
     cache_key = ("federal-ctc", batch.state, period_year, outputs)
     try:
         out = _execute_ctc(
-            projection, artifact_path, period_year, outputs, cache_key=cache_key,
+            projection,
+            artifact_path,
+            period_year,
+            outputs,
+            cache_key=cache_key,
         )
     finally:
         if scratch is not None:
@@ -326,9 +328,7 @@ def _patched_program_for_fed_income_tax(
     shutil.copytree(RULES_US_DIR, dst, symlinks=False)
     for ov in overrides:
         if ov.repo != "rules-us":
-            raise ValueError(
-                f"federal-income-tax overrides must target rules-us, got {ov.repo}"
-            )
+            raise ValueError(f"federal-income-tax overrides must target rules-us, got {ov.repo}")
         _patch_yaml(dst / ov.file_relative, ov)
     return dst / FED_INCOME_TAX_PROGRAM_REL, scratch
 
@@ -346,8 +346,7 @@ def _execute_fed_income_tax_dense(
     # The projection keys inputs by their full RuleSpec id; the dense
     # binding wants bare slot names.
     dense_inputs = {
-        full_id.split("#input.", 1)[1]: column
-        for full_id, column in projection.inputs.items()
+        full_id.split("#input.", 1)[1]: column for full_id, column in projection.inputs.items()
     }
     raw = program.execute(
         period_kind="year",
@@ -369,10 +368,11 @@ def _execute_fed_income_tax_dense(
 
 # --- Schema (input slots + defaults) ----------------------------------------
 
+
 @dataclass
 class _SlotSpec:
     name: str
-    dtype: str          # "bool" | "integer" | "decimal" | "date"
+    dtype: str  # "bool" | "integer" | "decimal" | "date"
     default: object
 
 
@@ -400,6 +400,7 @@ def _slots() -> tuple[list[_SlotSpec], list[_SlotSpec]]:
 
 
 # --- Compile / patch ---------------------------------------------------------
+
 
 def _artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path | None]:
     """Return ``(artifact_path, scratch_to_clean_or_None)``."""
@@ -444,7 +445,7 @@ def _ctc_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, 
     if not RULES_US_DIR.exists():
         raise FileNotFoundError(f"rules-us missing at {RULES_US_DIR}")
     scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-ctc-"))
-    dst = scratch / RULES_US_DIR.name      # preserve naming so engine resolves imports
+    dst = scratch / RULES_US_DIR.name  # preserve naming so engine resolves imports
     shutil.copytree(RULES_US_DIR, dst, symlinks=False)
     for ov in overrides:
         if ov.repo != "rules-us":
@@ -485,10 +486,15 @@ def _build_ctc_request_bytes(
     for tu_idx in range(projection.n_tax_units):
         tu_id = f"tu{tu_idx}"
         for full_id, column in projection.tax_unit_inputs.items():
-            inputs.append({
-                "name": full_id, "entity": "TaxUnit", "entity_id": tu_id,
-                "interval": interval, "value": _scalar_value(column[tu_idx]),
-            })
+            inputs.append(
+                {
+                    "name": full_id,
+                    "entity": "TaxUnit",
+                    "entity_id": tu_id,
+                    "interval": interval,
+                    "value": _scalar_value(column[tu_idx]),
+                }
+            )
         queries.append({"entity_id": tu_id, "period": period, "outputs": output_ids})
 
     pos_in_sorted = np.arange(projection.n_persons)
@@ -499,20 +505,32 @@ def _build_ctc_request_bytes(
         tu_idx = int(tu_for_person[sorted_p_idx])
         tu_id = f"tu{tu_idx}"
         for full_id, column in projection.person_inputs.items():
-            inputs.append({
-                "name": full_id, "entity": "Person", "entity_id": person_id,
-                "interval": interval, "value": _scalar_value(column[sorted_p_idx]),
-            })
+            inputs.append(
+                {
+                    "name": full_id,
+                    "entity": "Person",
+                    "entity_id": person_id,
+                    "interval": interval,
+                    "value": _scalar_value(column[sorted_p_idx]),
+                }
+            )
         for full_id, column in projection.tax_unit_inputs.items():
-            inputs.append({
-                "name": full_id, "entity": "Person", "entity_id": person_id,
-                "interval": interval, "value": _scalar_value(column[tu_idx]),
-            })
-        relations.append({
-            "name": FED_CTC_RELATION_NAME,
-            "tuple": [person_id, tu_id],
-            "interval": interval,
-        })
+            inputs.append(
+                {
+                    "name": full_id,
+                    "entity": "Person",
+                    "entity_id": person_id,
+                    "interval": interval,
+                    "value": _scalar_value(column[tu_idx]),
+                }
+            )
+        relations.append(
+            {
+                "name": FED_CTC_RELATION_NAME,
+                "tuple": [person_id, tu_id],
+                "interval": interval,
+            }
+        )
 
     request = {
         "mode": "fast",
@@ -539,7 +557,8 @@ def _execute_ctc(
 
     proc = subprocess.run(
         [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
-        input=request_bytes, capture_output=True,
+        input=request_bytes,
+        capture_output=True,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"engine failed:\n{proc.stderr.strip()[:1500]}")
@@ -579,7 +598,7 @@ def _fed_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, 
     if not RULES_US_DIR.exists():
         raise FileNotFoundError(f"rules-us missing at {RULES_US_DIR}")
     scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-fed-"))
-    dst = scratch / RULES_US_DIR.name      # preserve naming
+    dst = scratch / RULES_US_DIR.name  # preserve naming
     shutil.copytree(RULES_US_DIR, dst, symlinks=False)
     for ov in overrides:
         if ov.repo != "rules-us":
@@ -611,13 +630,15 @@ def _execute_fed_income_tax(
     for tu_idx in range(projection.n_tax_units):
         tu_id = f"tu{tu_idx}"
         for full_input_id, column in projection.inputs.items():
-            inputs.append({
-                "name": full_input_id,
-                "entity": "TaxUnit",
-                "entity_id": tu_id,
-                "interval": interval,
-                "value": _scalar_value(column[tu_idx]),
-            })
+            inputs.append(
+                {
+                    "name": full_input_id,
+                    "entity": "TaxUnit",
+                    "entity_id": tu_id,
+                    "interval": interval,
+                    "value": _scalar_value(column[tu_idx]),
+                }
+            )
         queries.append({"entity_id": tu_id, "period": period, "outputs": output_ids})
 
     request = {
@@ -628,7 +649,8 @@ def _execute_fed_income_tax(
 
     proc = subprocess.run(
         [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
-        input=orjson.dumps(request), capture_output=True,
+        input=orjson.dumps(request),
+        capture_output=True,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"engine failed:\n{proc.stderr.strip()[:1500]}")
@@ -661,7 +683,8 @@ def _compile(program_yaml: Path, output_json: Path) -> None:
         )
     subprocess.run(
         [str(ENGINE_BIN), "compile", "--program", str(program_yaml), "--output", str(output_json)],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
 
 
@@ -689,12 +712,10 @@ def _execute_compiled(
 
     proc = subprocess.run(
         [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
-        input=request_bytes, capture_output=True,
+        input=request_bytes,
+        capture_output=True,
     )
-    if (
-        proc.returncode != 0
-        and b"missing input `snap_excess_shelter_deduction`" in proc.stderr
-    ):
+    if proc.returncode != 0 and b"missing input `snap_excess_shelter_deduction`" in proc.stderr:
         request_bytes = _build_co_snap_shelter_bridge_request_bytes(
             projection, artifact_path, period_year, output_ids
         )
@@ -702,7 +723,8 @@ def _execute_compiled(
             _CO_SNAP_REQUEST_CACHE[cache_key] = request_bytes
         proc = subprocess.run(
             [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
-            input=request_bytes, capture_output=True,
+            input=request_bytes,
+            capture_output=True,
         )
     if proc.returncode != 0:
         raise RuntimeError(f"engine failed:\n{proc.stderr.strip()}")
@@ -730,12 +752,12 @@ def _build_co_snap_shelter_bridge_request_bytes(
     )
     bridge_proc = subprocess.run(
         [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
-        input=orjson.dumps(bridge_request), capture_output=True,
+        input=orjson.dumps(bridge_request),
+        capture_output=True,
     )
     if bridge_proc.returncode != 0:
         raise RuntimeError(
-            f"engine failed while computing CO SNAP shelter bridge:\n"
-            f"{bridge_proc.stderr.strip()}"
+            f"engine failed while computing CO SNAP shelter bridge:\n{bridge_proc.stderr.strip()}"
         )
     bridge_response = orjson.loads(bridge_proc.stdout)
     shelter = _collect_outputs(
@@ -789,14 +811,18 @@ def _build_compiled_request(
             inputs.append(_input_record(_input_id(slot.name), "Household", hh_id, interval, value))
         for input_id, values in (extra_household_inputs or {}).items():
             inputs.append(_input_record(input_id, "Household", hh_id, interval, values[h_idx]))
-        queries.append({
-            "entity_id": hh_id,
-            "period": period,
-            "outputs": output_ids,
-        })
+        queries.append(
+            {
+                "entity_id": hh_id,
+                "period": period,
+                "outputs": output_ids,
+            }
+        )
 
     # Person-level inputs + member_of_household relations.
-    person_to_hh = np.searchsorted(proj.relation_offsets, np.arange(proj.n_persons), side="right") - 1
+    person_to_hh = (
+        np.searchsorted(proj.relation_offsets, np.arange(proj.n_persons), side="right") - 1
+    )
     for p_idx in range(proj.n_persons):
         person_id = f"p{p_idx}"
         hh_id = f"h{int(person_to_hh[p_idx])}"
@@ -807,11 +833,13 @@ def _build_compiled_request(
                 else slot.default
             )
             inputs.append(_input_record(_input_id(slot.name), "Person", person_id, interval, value))
-        relations.append({
-            "name": CO_SNAP_RELATION_NAME,
-            "tuple": [person_id, hh_id],
-            "interval": interval,
-        })
+        relations.append(
+            {
+                "name": CO_SNAP_RELATION_NAME,
+                "tuple": [person_id, hh_id],
+                "interval": interval,
+            }
+        )
 
     return {
         "mode": "fast",
@@ -887,6 +915,7 @@ def _collect_outputs(
 
 
 # --- YAML patching -----------------------------------------------------------
+
 
 def _patch_yaml(path: Path, override: ParameterOverride) -> None:
     yaml = YAML()

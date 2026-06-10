@@ -37,13 +37,56 @@ DEFAULT_YEAR = "2024"
 
 # Census FIPS codes for the 50 states + DC. Hand-encoded; no PE dependency.
 STATE_FIPS = {
-    "AL": 1, "AK": 2, "AZ": 4, "AR": 5, "CA": 6, "CO": 8, "CT": 9, "DE": 10,
-    "DC": 11, "FL": 12, "GA": 13, "HI": 15, "ID": 16, "IL": 17, "IN": 18,
-    "IA": 19, "KS": 20, "KY": 21, "LA": 22, "ME": 23, "MD": 24, "MA": 25,
-    "MI": 26, "MN": 27, "MS": 28, "MO": 29, "MT": 30, "NE": 31, "NV": 32,
-    "NH": 33, "NJ": 34, "NM": 35, "NY": 36, "NC": 37, "ND": 38, "OH": 39,
-    "OK": 40, "OR": 41, "PA": 42, "RI": 44, "SC": 45, "SD": 46, "TN": 47,
-    "TX": 48, "UT": 49, "VT": 50, "VA": 51, "WA": 53, "WV": 54, "WI": 55,
+    "AL": 1,
+    "AK": 2,
+    "AZ": 4,
+    "AR": 5,
+    "CA": 6,
+    "CO": 8,
+    "CT": 9,
+    "DE": 10,
+    "DC": 11,
+    "FL": 12,
+    "GA": 13,
+    "HI": 15,
+    "ID": 16,
+    "IL": 17,
+    "IN": 18,
+    "IA": 19,
+    "KS": 20,
+    "KY": 21,
+    "LA": 22,
+    "ME": 23,
+    "MD": 24,
+    "MA": 25,
+    "MI": 26,
+    "MN": 27,
+    "MS": 28,
+    "MO": 29,
+    "MT": 30,
+    "NE": 31,
+    "NV": 32,
+    "NH": 33,
+    "NJ": 34,
+    "NM": 35,
+    "NY": 36,
+    "NC": 37,
+    "ND": 38,
+    "OH": 39,
+    "OK": 40,
+    "OR": 41,
+    "PA": 42,
+    "RI": 44,
+    "SC": 45,
+    "SD": 46,
+    "TN": 47,
+    "TX": 48,
+    "UT": 49,
+    "VT": 50,
+    "VA": 51,
+    "WA": 53,
+    "WV": 54,
+    "WI": 55,
     "WY": 56,
 }
 
@@ -63,8 +106,8 @@ class EcpsBatch:
     year: str
     n_persons: int
     n_households: int
-    person_household_index: np.ndarray         # int64 (n_persons,)
-    household_weight: np.ndarray               # float64 (n_households,)
+    person_household_index: np.ndarray  # int64 (n_persons,)
+    household_weight: np.ndarray  # float64 (n_households,)
     person_columns: dict[str, np.ndarray] = field(default_factory=dict)
     household_columns: dict[str, np.ndarray] = field(default_factory=dict)
 
@@ -124,8 +167,8 @@ class TaxUnitBatch:
     year: str
     n_persons: int
     n_tax_units: int
-    person_tax_unit_index: np.ndarray   # int64 (n_persons,)
-    tax_unit_weight: np.ndarray         # float64 (n_tax_units,)
+    person_tax_unit_index: np.ndarray  # int64 (n_persons,)
+    tax_unit_weight: np.ndarray  # float64 (n_tax_units,)
     person_columns: dict[str, np.ndarray] = field(default_factory=dict)
 
 
@@ -152,15 +195,14 @@ def load_state(
         )
 
     with h5py.File(h5_path, "r") as f:
-        household_ids = _read(f, "household_id", year)              # (H,)
-        household_state_fips = _read(f, "state_fips", year)         # (H,)
-        household_weight_all = _read(f, "household_weight", year)   # (H,)
-        person_hh_id = _read(f, "person_household_id", year)        # (P,)
+        household_ids = _read(f, "household_id", year)  # (H,)
+        household_state_fips = _read(f, "state_fips", year)  # (H,)
+        household_weight_all = _read(f, "household_weight", year)  # (H,)
+        person_hh_id = _read(f, "person_household_id", year)  # (P,)
 
         if not (household_ids.shape == household_state_fips.shape == household_weight_all.shape):
             raise RuntimeError(
-                "ECPS shape mismatch across household-level variables — "
-                "h5 file is malformed."
+                "ECPS shape mismatch across household-level variables — h5 file is malformed."
             )
 
         hh_mask = household_state_fips == fips
@@ -233,7 +275,6 @@ def load_state_tax_units(
         household_state_fips = _read(f, "state_fips", year)
         household_weight_all = _read(f, "household_weight", year)
         person_household_id = _read(f, "person_household_id", year)
-        tax_unit_ids = _read(f, "tax_unit_id", year)
         person_tax_unit_id = _read(f, "person_tax_unit_id", year)
 
         # Filter households by state, then keep only those persons

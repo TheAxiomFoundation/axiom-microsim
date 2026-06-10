@@ -39,11 +39,11 @@ from ..data.ecps_loader import (
 # the taxable_income proxy. If/when the deduction chain is wired the
 # proxy goes away and we feed AGI instead.
 STD_DEDUCTION_2026 = {
-    0: 16_100,   # single
-    1: 32_200,   # joint
-    2: 16_100,   # MFS
-    3: 24_150,   # HoH
-    4: 32_200,   # surviving spouse
+    0: 16_100,  # single
+    1: 32_200,  # joint
+    2: 16_100,  # MFS
+    3: 24_150,  # HoH
+    4: 32_200,  # surviving spouse
 }
 
 ADULT_AGE = 18
@@ -109,13 +109,16 @@ def project(batch: TaxUnitBatch, *, period_year: int = 2026) -> FedIncomeTaxProj
     # Filing status heuristic: count adults vs total persons per TU.
     age = batch.person_columns["age"]
     is_adult = (age >= ADULT_AGE).astype(np.float64)
-    adults_per_tu = sum_person_to_tax_unit(is_adult, batch.person_tax_unit_index, n_tu).astype(np.int64)
+    adults_per_tu = sum_person_to_tax_unit(is_adult, batch.person_tax_unit_index, n_tu).astype(
+        np.int64
+    )
     persons_per_tu = count_persons_per_tax_unit(batch.person_tax_unit_index).astype(np.int64)
     dependents_per_tu = persons_per_tu - adults_per_tu
 
     filing_status = np.where(
-        adults_per_tu >= 2, 1,                         # joint
-        np.where(dependents_per_tu > 0, 3, 0),         # HoH else single
+        adults_per_tu >= 2,
+        1,  # joint
+        np.where(dependents_per_tu > 0, 3, 0),  # HoH else single
     ).astype(np.int64)
 
     # Standard deduction by filing status.
@@ -148,7 +151,9 @@ def project(batch: TaxUnitBatch, *, period_year: int = 2026) -> FedIncomeTaxProj
         # §1250 unrecaptured gain not separable in ECPS — leave at 0.
         "us:statutes/26/1/h#input.unrecaptured_section_1250_gain": np.zeros(n_tu, dtype=np.int64),
         # Collectibles → 28% rate gain bucket.
-        "us:statutes/26/1/h#input.capital_gains_28_percent_rate_gain": collectibles.round().astype(np.int64),
+        "us:statutes/26/1/h#input.capital_gains_28_percent_rate_gain": collectibles.round().astype(
+            np.int64
+        ),
     }
 
     return FedIncomeTaxProjection(

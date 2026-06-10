@@ -35,20 +35,29 @@ def _parse_override(token: str) -> ParameterOverride:
         raise argparse.ArgumentTypeError(f"unknown repo {repo!r}")
     if kind in {"scale_values", "scale_formula"}:
         return ParameterOverride(
-            repo=repo, file_relative=file_relative, parameter=parameter,
-            patch_kind=kind, multiplier=float(arg),
+            repo=repo,
+            file_relative=file_relative,
+            parameter=parameter,
+            patch_kind=kind,
+            multiplier=float(arg),
         )
     if kind == "set_formula":
         return ParameterOverride(
-            repo=repo, file_relative=file_relative, parameter=parameter,
-            patch_kind=kind, formula=arg,
+            repo=repo,
+            file_relative=file_relative,
+            parameter=parameter,
+            patch_kind=kind,
+            formula=arg,
         )
     if kind == "set_values":
         # arg: "key=val,key=val"
         values = {int(k): float(v) for k, v in (kv.split("=") for kv in arg.split(","))}
         return ParameterOverride(
-            repo=repo, file_relative=file_relative, parameter=parameter,
-            patch_kind=kind, values=values,
+            repo=repo,
+            file_relative=file_relative,
+            parameter=parameter,
+            patch_kind=kind,
+            values=values,
         )
     raise argparse.ArgumentTypeError(f"unknown patch kind {kind!r}")
 
@@ -62,9 +71,12 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--state", default="CO")
     run.add_argument("--year", type=int, default=2026)
     run.add_argument(
-        "--override", action="append", type=_parse_override, default=[],
+        "--override",
+        action="append",
+        type=_parse_override,
+        default=[],
         help="Reform override (REPO/FILE:PARAM:KIND:ARG); can repeat. "
-             "If any --override is given, the run also returns reform-vs-baseline impact.",
+        "If any --override is given, the run also returns reform-vs-baseline impact.",
     )
 
     args = parser.parse_args(argv)

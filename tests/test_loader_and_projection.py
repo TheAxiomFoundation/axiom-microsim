@@ -22,7 +22,9 @@ from axiom_microsim.run.microsim import (
 )
 
 
-ECPS_PATH = Path(os.environ.get("AXIOM_ECPS_PATH", str(Path.home() / "Downloads" / "enhanced_cps_2024.h5")))
+ECPS_PATH = Path(
+    os.environ.get("AXIOM_ECPS_PATH", str(Path.home() / "Downloads" / "enhanced_cps_2024.h5"))
+)
 requires_ecps = pytest.mark.skipif(
     not ECPS_PATH.exists(),
     reason=f"Enhanced CPS file not present at {ECPS_PATH}",
@@ -35,7 +37,9 @@ def test_loader_co_subset_has_realistic_population() -> None:
     assert batch.state == "CO"
     assert batch.n_households > 100
     assert batch.n_persons > batch.n_households
-    weighted_population_persons = batch.n_persons / batch.n_households * batch.household_weight.sum()
+    weighted_population_persons = (
+        batch.n_persons / batch.n_households * batch.household_weight.sum()
+    )
     # CO 2024 population is ~5.9M. Tolerate 50% slack since this is a tiny sample.
     assert 3_000_000 < weighted_population_persons < 9_000_000
 
@@ -89,9 +93,7 @@ def test_compiled_request_can_bind_federal_shelter_bridge() -> None:
     )
 
     matched = [
-        row
-        for row in request["dataset"]["inputs"]
-        if row["name"] == FED_SNAP_EXCESS_SHELTER_INPUT
+        row for row in request["dataset"]["inputs"] if row["name"] == FED_SNAP_EXCESS_SHELTER_INPUT
     ]
     assert len(matched) == proj.n_households
     assert matched[0]["value"] == {"kind": "decimal", "value": "0.000000"}

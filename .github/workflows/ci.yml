@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.2
+        with:
+          repository: TheAxiomFoundation/axiom-rules-engine
+          path: _axiom/axiom-rules-engine
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv python install 3.14
+      - run: uv venv --python 3.14 && uv pip install -e ".[dev]" -e _axiom/axiom-rules-engine/python
+      - run: .venv/bin/ruff check axiom_microsim tests
+      - run: .venv/bin/ruff format --check axiom_microsim tests
+      # Engine-dependent and ECPS-dependent tests self-skip without the
+      # Rust binary / the Enhanced CPS file; the rest still gate imports,
+      # projections, and the FastAPI surface.
+      - run: .venv/bin/pytest -q

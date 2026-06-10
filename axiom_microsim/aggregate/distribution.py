@@ -15,12 +15,12 @@ from ..run.microsim import MicrosimResult
 
 @dataclass
 class DecileBin:
-    decile: int                      # 1..10
-    income_floor: float              # lower edge (annual)
-    income_ceiling: float            # upper edge (annual)
+    decile: int  # 1..10
+    income_floor: float  # lower edge (annual)
+    income_ceiling: float  # upper edge (annual)
     households_weighted: float
-    mean_monthly_benefit: float      # mean across households in this decile
-    share_receiving: float           # weighted share with benefit > 0
+    mean_monthly_benefit: float  # mean across households in this decile
+    share_receiving: float  # weighted share with benefit > 0
 
 
 @dataclass

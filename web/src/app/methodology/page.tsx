@@ -109,7 +109,7 @@ function ProgramSection({ program }: { program: ProgramMethodology }) {
         ECPS → Axiom input mapping
       </h3>
       <div className="mb-8 overflow-x-auto rounded-md border border-rule">
-        <table className="w-full border-collapse text-sm">
+        <table className="w-full min-w-[36rem] border-collapse text-sm">
           <thead className="bg-rule-subtle">
             <tr>
               <Th>Axiom slot</Th>
@@ -150,7 +150,7 @@ function ProgramSection({ program }: { program: ProgramMethodology }) {
 
       <h3 className="mb-3 font-serif text-lg text-ink">Limitations</h3>
       <div className="overflow-x-auto rounded-md border border-rule">
-        <table className="w-full border-collapse text-sm">
+        <table className="w-full min-w-[36rem] border-collapse text-sm">
           <thead className="bg-rule-subtle">
             <tr>
               <Th>Issue</Th>

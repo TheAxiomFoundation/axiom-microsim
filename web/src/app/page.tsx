@@ -781,8 +781,8 @@ function PePanel({
       {pe.error && <ErrorBox>{pe.error}</ErrorBox>}
 
       {(hasResult || running) && (
-        <div className="overflow-hidden rounded-sm border border-rule">
-          <table className="w-full border-collapse text-sm">
+        <div className="overflow-x-auto rounded-sm border border-rule">
+          <table className="w-full min-w-[28rem] border-collapse text-sm">
             <thead className="bg-rule-subtle font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
               <tr>
                 <th className="px-3 py-2 text-left">Metric</th>
@@ -876,8 +876,8 @@ function PeReformPanel({
       {pe.error && <ErrorBox>{pe.error}</ErrorBox>}
 
       {(hasResult || running) && (
-        <div className="overflow-hidden rounded-sm border border-rule">
-          <table className="w-full border-collapse text-sm">
+        <div className="overflow-x-auto rounded-sm border border-rule">
+          <table className="w-full min-w-[28rem] border-collapse text-sm">
             <thead className="bg-rule-subtle font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
               <tr>
                 <th className="px-3 py-2 text-left">Metric</th>

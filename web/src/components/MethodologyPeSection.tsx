@@ -155,7 +155,7 @@ function PeRow({ scope }: { scope: ScopeSpec }) {
       )}
 
       {run.result && (
-        <div className="overflow-hidden rounded-sm border border-rule">
+        <div className="overflow-x-auto rounded-sm border border-rule">
           <table className="w-full border-collapse text-sm">
             <thead className="bg-rule-subtle font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
               <tr>

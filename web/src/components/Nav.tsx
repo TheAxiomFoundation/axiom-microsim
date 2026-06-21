@@ -12,7 +12,7 @@ export function Nav() {
   const pathname = usePathname();
   return (
     <nav className="border-b border-rule bg-paper-elev">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-4">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-6 py-4 sm:gap-6">
         {/* Axiom Foundation wordmark links out; the 'microsim' label
             links to the runner. Two separate anchors — they can't nest. */}
         <div className="flex items-center gap-3">

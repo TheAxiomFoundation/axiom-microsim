@@ -92,7 +92,7 @@ function ScopePanel({
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
+        <table className="w-full min-w-[30rem] border-collapse text-sm">
           <thead className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
             <tr className="border-b border-rule">
               <th className="px-3 py-2 text-left">ECPS column</th>

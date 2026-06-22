@@ -4,7 +4,7 @@ import Script from "next/script";
 import { Nav } from "@/components/Nav";
 import "./globals.css";
 
-const GA_ID = "G-5PB7KEWV38";
+const GA_ID = "G-2YHG89FY0N";
 const TOOL_NAME = "axiom-microsim";
 
 const sans = Geist({

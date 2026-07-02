@@ -110,7 +110,7 @@ def test_pinned_download_uses_dataset_repo_and_revision(tmp_path, monkeypatch) -
     }
 
 
-# --- HDFStore-layout reader + derived-name aliasing --------------------------
+# --- HDFStore-layout reader (raw input concepts only) ------------------------
 
 
 def _make_populace_like(tmp_path: Path) -> Path:
@@ -166,17 +166,23 @@ def test_reader_reads_fields_by_entity(tmp_path: Path) -> None:
         assert not r.has("no_such_variable")
 
 
-def test_reader_aliases_derived_names(tmp_path: Path) -> None:
+def test_reader_rejects_derived_names(tmp_path: Path) -> None:
+    """Law-derived quantities are rule outputs, never population inputs."""
     p = _make_populace_like(tmp_path)
     with h5py.File(p, "r") as f:
         r = pl.PopulaceReader(f)
-        # PE-derived names map to their populace raw inputs.
-        np.testing.assert_array_equal(r.column("rent"), [12000, 0, 0, 9000])
+        # Raw input concepts resolve.
         np.testing.assert_array_equal(
-            r.column("taxable_unemployment_compensation"), [0, 2500, 0, 0]
+            r.column("pre_subsidy_rent"), [12000, 0, 0, 9000]
         )
-        assert r.has("rent")
-        assert r.has("taxable_unemployment_compensation")
+        np.testing.assert_array_equal(
+            r.column("unemployment_compensation"), [0, 2500, 0, 0]
+        )
+        # Derived names fail loudly instead of being aliased.
+        for derived in ("rent", "taxable_unemployment_compensation"):
+            assert not r.has(derived)
+            with pytest.raises(KeyError, match="compute it in rules"):
+                r.column(derived)
 
 
 def test_reader_unknown_variable_raises(tmp_path: Path) -> None:
@@ -198,12 +204,14 @@ def test_load_state_over_synthetic_populace(tmp_path: Path, monkeypatch) -> None
     monkeypatch.setenv(pl.POPULACE_ENV_VAR, str(p))
     monkeypatch.delenv("AXIOM_ECPS_PATH", raising=False)
 
-    batch = el.load_state("CO", person_columns=("age", "rent"))
+    batch = el.load_state("CO", person_columns=("age", "pre_subsidy_rent"))
     assert batch.state == "CO"
     assert batch.n_households == 2
     assert batch.n_persons == 4
-    # rent aliased to pre_subsidy_rent, kept per person.
-    np.testing.assert_array_equal(batch.person_columns["rent"], [12000, 0, 0, 9000])
+    # Raw gross-rent concept, kept per person.
+    np.testing.assert_array_equal(
+        batch.person_columns["pre_subsidy_rent"], [12000, 0, 0, 9000]
+    )
     np.testing.assert_array_equal(batch.household_weight, [1000.0, 2000.0])
 
 

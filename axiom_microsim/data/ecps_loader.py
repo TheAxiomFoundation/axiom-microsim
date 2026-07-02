@@ -261,11 +261,13 @@ DEFAULT_PERSON_COLUMNS: tuple[str, ...] = (
     "farm_income",
     "estate_income",
     "alimony_income",
-    "taxable_unemployment_compensation",
+    # Raw concept; the taxable amount (26 USC 85) is a rule output, not
+    # a population input.
+    "unemployment_compensation",
     "miscellaneous_income",
-    # Logically household-level but stored per-person in ECPS. Folded by
-    # the projection layer.
-    "rent",
+    # Logically household-level but stored per-person. Folded by the
+    # projection layer. Gross rent — subsidy netting is rules-layer.
+    "pre_subsidy_rent",
 )
 
 DEFAULT_HOUSEHOLD_COLUMNS: tuple[str, ...] = ()

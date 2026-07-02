@@ -151,10 +151,11 @@ populace files are pandas `HDFStore` / PyTables tables (one compound-dtype
 `table` dataset per entity: `person/table`, `household/table`, …), unlike
 the legacy Enhanced CPS flat `variable/year` groups. The loader hides this
 behind a column-reader adapter, so the same state / tax-unit filtering code
-serves both. Two PolicyEngine-*derived* names the projections use
-(`rent`, `taxable_unemployment_compensation`) are absent from populace's
-input layer and map to their raw inputs (`pre_subsidy_rent`,
-`unemployment_compensation`).
+serves both. Only raw input concepts are readable: law-derived quantities
+(e.g. taxable unemployment compensation under 26 USC 85, subsidy-netted
+rent) are rule outputs and are rejected with a `KeyError` rather than
+aliased — projections consume the raw inputs (`unemployment_compensation`,
+`pre_subsidy_rent`) and the legal transformation belongs in encoded rules.
 
 ## Layout
 

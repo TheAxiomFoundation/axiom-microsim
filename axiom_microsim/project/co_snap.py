@@ -97,12 +97,16 @@ def project(batch: EcpsBatch, *, period_year: int = 2026) -> CoSnapProjection:
     # --- Household-level projection ---
     household_size = counts.astype(np.int64)
 
-    # ECPS stores `rent` per person, semantically a household quantity.
-    # Folding by sum across people in the household preserves the
-    # convention PE itself uses when this column is treated as a
-    # household total. PE's `rent` is annual; SNAP wants monthly shelter.
+    # Gross (pre-subsidy) rent is the raw input concept; PE's `rent` is a
+    # derived, post-housing-subsidy quantity and derived values are not
+    # population inputs. Netting subsidies out of shelter costs for
+    # 7 CFR 273.9(d)(6)(ii) is rules-layer semantics (currently
+    # unmodeled), so shelter here uses gross rent. Stored per person,
+    # semantically a household quantity; annual, while SNAP wants monthly.
     annual_rent_sum = sum_person_to_household(
-        batch.person_columns["rent"], batch.person_household_index, batch.n_households
+        batch.person_columns["pre_subsidy_rent"],
+        batch.person_household_index,
+        batch.n_households,
     )
     monthly_shelter = (annual_rent_sum / 12.0).round().astype(np.int64)
 

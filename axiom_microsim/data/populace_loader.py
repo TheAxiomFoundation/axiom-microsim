@@ -192,27 +192,12 @@ class PopulaceReader:
     the exact shape the legacy flat reader produced from
     ``f[var][year][...]``, so downstream filtering is source-agnostic.
 
-    A handful of variable names the microsim projections use are
-    PolicyEngine-*derived* (computed by a formula, not stored as an input)
-    and therefore absent from populace's input layer. For those we map to
-    the raw input the derived variable is built from. Each alias is a
-    deliberate, documented substitution — see :data:`DERIVED_TO_INPUT`.
+    Only raw input concepts are readable. Law-derived quantities (e.g.
+    taxable unemployment compensation under 26 USC 85, or subsidy-netted
+    rent) are rule outputs: they must be computed by encoded rules, never
+    supplied — or aliased — as population inputs. A projection asking for
+    a derived name gets a loud ``KeyError``, not a substitute.
     """
-
-    #: Microsim column name -> populace raw-input field, for names that are
-    #: PolicyEngine-derived (so not stored in populace's input layer).
-    #:
-    #: - ``rent``: PE's ``rent`` is post-housing-subsidy and SPM-folded
-    #:   (``variables/household/expense/housing/rent.py``); its raw input is
-    #:   ``pre_subsidy_rent``. For the SNAP shelter deduction, gross
-    #:   (pre-subsidy) rent is the honest available substitute.
-    #: - ``taxable_unemployment_compensation``: PE derives this from
-    #:   ``unemployment_compensation`` via the §85 taxable-UI chain
-    #:   (mostly ~100% taxable); the raw benefit is the available proxy.
-    DERIVED_TO_INPUT: dict[str, str] = {
-        "rent": "pre_subsidy_rent",
-        "taxable_unemployment_compensation": "unemployment_compensation",
-    }
 
     def __init__(self, h5: h5py.File):
         self._h5 = h5
@@ -239,18 +224,17 @@ class PopulaceReader:
         return cached
 
     def has(self, var: str) -> bool:
-        return var in self._field_owner or var in self.DERIVED_TO_INPUT
+        return var in self._field_owner
 
     def column(self, var: str) -> np.ndarray:
-        """Return the 1-D array for ``var`` (with derived-name aliasing)."""
-        source = var
-        if var not in self._field_owner and var in self.DERIVED_TO_INPUT:
-            source = self.DERIVED_TO_INPUT[var]
-        entity = self._field_owner.get(source)
+        """Return the 1-D array for ``var`` (raw input fields only)."""
+        entity = self._field_owner.get(var)
         if entity is None:
             raise KeyError(
                 f"variable {var!r} not in populace file "
                 f"({POPULACE_US_REPO}@{POPULACE_US_REVISION}); no such field "
-                "on any entity table and no derived-input alias."
+                "on any entity table. If this is a law-derived quantity, "
+                "compute it in rules from raw inputs instead of reading it "
+                "from population data."
             )
-        return np.asarray(self._table(entity)[source])
+        return np.asarray(self._table(entity)[var])

@@ -52,10 +52,27 @@ PROGRAMS_TO_COMPILE: dict[str, tuple[str, str]] = {
     "federal-ctc": ("rulespec-us", "statutes/26/24/h.yaml"),
 }
 
-# ECPS .h5 lives on a Modal Volume so cold starts don't pay the download.
-# Populate once with `modal volume put axiom-microsim-ecps enhanced_cps_2024.h5`.
-ECPS_VOLUME = modal.Volume.from_name("axiom-microsim-ecps", create_if_missing=True)
-ECPS_MOUNT = "/data/ecps"
+# Population data lives on a Modal Volume so cold starts don't pay the
+# download. Migrated 2026-07-02 (plan A2) from the legacy Enhanced CPS
+# (policyengine-us-data) to the pinned **populace** artifact.
+#
+# Populate once with the pinned dense release (see populace_loader.py for
+# why the dense f0af251 pin and NOT HF `latest`/the #278 sparse artifact):
+#
+#   REV=populace-us-2024-f0af251-703bd81a565c-20260620T201958Z
+#   huggingface-cli download policyengine/populace-us populace_us_2024.h5 \
+#     --repo-type dataset --revision "$REV" --local-dir /tmp/pop
+#   modal volume put axiom-microsim-populace /tmp/pop/populace_us_2024.h5
+#
+# MIGRATION NOTE: the old `axiom-microsim-ecps` volume (holding
+# enhanced_cps_2024.h5) is retired. Do not repopulate it. The container
+# reads the populace file via AXIOM_POPULACE_US_H5 below, which the loader
+# sha256-verifies against the pin on first read.
+POPULACE_VOLUME = modal.Volume.from_name(
+    "axiom-microsim-populace", create_if_missing=True
+)
+POPULACE_MOUNT = "/data/populace"
+POPULACE_FILENAME = "populace_us_2024.h5"
 
 
 _compile_cmds = [
@@ -140,7 +157,11 @@ image = (
         "AXIOM_RULES_US_DIR": "/opt/rulespec-us",
         "AXIOM_RULES_US_CO_DIR": "/opt/rulespec-us-co",
         "AXIOM_RULES_ENGINE_BINARY": "/opt/axiom-rules-engine/target/release/axiom-rules-engine",
-        "AXIOM_ECPS_PATH": f"{ECPS_MOUNT}/enhanced_cps_2024.h5",
+        # Population source: the pinned populace artifact on the Volume.
+        # The loader sha256-verifies this against the pin before reading.
+        # (AXIOM_ECPS_PATH is intentionally NOT set — that legacy escape
+        # hatch would force the deprecated Enhanced CPS path.)
+        "AXIOM_POPULACE_US_H5": f"{POPULACE_MOUNT}/{POPULACE_FILENAME}",
         # /compare subprocesses into a Python with policyengine_us. In
         # Modal that's the SAME interpreter the FastAPI app runs in.
         "AXIOM_PE_PYTHON": "/usr/local/bin/python",
@@ -151,7 +172,7 @@ image = (
 
 @app.function(
     image=image,
-    volumes={ECPS_MOUNT: ECPS_VOLUME},
+    volumes={POPULACE_MOUNT: POPULACE_VOLUME},
     timeout=600,
     memory=8192,
     # PE microsim warmup is heavy; keep one container hot to avoid

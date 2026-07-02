@@ -1,9 +1,15 @@
-"""Smoke tests for the ECPS loader and CO SNAP projection.
+"""Smoke tests for the population loader and CO SNAP projection.
 
 These don't require the dense engine — they validate the data path
 the engine consumes. End-to-end engine tests live in
 ``test_engine_smoke.py`` and are gated on the native extension being
 built.
+
+The loader's default source is the pinned populace artifact. These tests
+run whenever *any* population source is resolvable: a local pinned
+populace copy (``$AXIOM_POPULACE_US_H5``), the legacy Enhanced CPS
+(``$AXIOM_ECPS_PATH``), or — in an environment with network + HF access —
+the pinned populace download itself. In CI without data they self-skip.
 """
 
 from __future__ import annotations
@@ -15,6 +21,7 @@ import numpy as np
 import pytest
 
 from axiom_microsim.data.ecps_loader import load_state, sum_person_to_household
+from axiom_microsim.data.populace_loader import POPULACE_ENV_VAR
 from axiom_microsim.project.co_snap import project
 from axiom_microsim.run.microsim import (
     FED_SNAP_EXCESS_SHELTER_INPUT,
@@ -22,16 +29,31 @@ from axiom_microsim.run.microsim import (
 )
 
 
-ECPS_PATH = Path(
-    os.environ.get("AXIOM_ECPS_PATH", str(Path.home() / "Downloads" / "enhanced_cps_2024.h5"))
-)
-requires_ecps = pytest.mark.skipif(
-    not ECPS_PATH.exists(),
-    reason=f"Enhanced CPS file not present at {ECPS_PATH}",
+def _population_available() -> bool:
+    """True when the loader can resolve *some* population source locally.
+
+    We only accept locally-present files here so the suite never blocks on
+    a network download during a plain ``pytest`` run.
+    """
+    populace_local = os.environ.get(POPULACE_ENV_VAR)
+    if populace_local and Path(populace_local).expanduser().exists():
+        return True
+    ecps_local = os.environ.get("AXIOM_ECPS_PATH")
+    if ecps_local and Path(ecps_local).expanduser().exists():
+        return True
+    return (Path.home() / "Downloads" / "enhanced_cps_2024.h5").exists()
+
+
+requires_population = pytest.mark.skipif(
+    not _population_available(),
+    reason=(
+        "no local population source: set AXIOM_POPULACE_US_H5 to a pinned "
+        "populace copy, or AXIOM_ECPS_PATH to a legacy Enhanced CPS file"
+    ),
 )
 
 
-@requires_ecps
+@requires_population
 def test_loader_co_subset_has_realistic_population() -> None:
     batch = load_state("CO")
     assert batch.state == "CO"
@@ -44,7 +66,7 @@ def test_loader_co_subset_has_realistic_population() -> None:
     assert 3_000_000 < weighted_population_persons < 9_000_000
 
 
-@requires_ecps
+@requires_population
 def test_loader_offsets_partition_persons() -> None:
     batch = load_state("CO")
     proj = project(batch)
@@ -55,7 +77,7 @@ def test_loader_offsets_partition_persons() -> None:
     assert (sizes > 0).all(), "every household should have at least one person"
 
 
-@requires_ecps
+@requires_population
 def test_projection_household_size_matches_offset_widths() -> None:
     batch = load_state("CO")
     proj = project(batch)
@@ -63,7 +85,7 @@ def test_projection_household_size_matches_offset_widths() -> None:
     np.testing.assert_array_equal(proj.household_inputs["household_size"], sizes_from_offsets)
 
 
-@requires_ecps
+@requires_population
 def test_projection_inputs_have_expected_dtypes() -> None:
     batch = load_state("CO")
     proj = project(batch)
@@ -80,7 +102,7 @@ def test_sum_person_to_household_basic() -> None:
     np.testing.assert_array_equal(out, [30, 70, 50])
 
 
-@requires_ecps
+@requires_population
 def test_compiled_request_can_bind_federal_shelter_bridge() -> None:
     batch = load_state("CO")
     proj = project(batch)

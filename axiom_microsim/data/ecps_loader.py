@@ -1,39 +1,156 @@
-"""Strictly PE-free loader for the Enhanced CPS HDF5 files.
+"""Strictly PE-free population loader.
 
-The h5 layout (as built by `policyengine-us-data`) stores one group per
-variable with a single year-keyed dataset inside, e.g.
+The **default** population source is PolicyEngine's *populace* project —
+the pinned dense ``populace_us_2024.h5`` artifact resolved and verified by
+:mod:`axiom_microsim.data.populace_loader`. The legacy Enhanced CPS
+(``policyengine-us-data``) remains a per-run **escape hatch** via
+``$AXIOM_ECPS_PATH`` (deprecated; emits a ``DeprecationWarning``).
 
-    age/2024                  shape=(N_persons,)     float32
-    person_household_id/2024  shape=(N_persons,)     int32   (each person's hh)
-    household_id/2024         shape=(N_households,)  int32   (canonical hh ids)
-    household_weight/2024     shape=(N_households,)  float32
-    state_fips/2024           shape=(N_households,)  int32
+The two sources store their columns differently, and this loader hides the
+difference behind a small column-reader abstraction so the state / tax-unit
+filtering logic is identical for both:
 
-Some variables that are semantically household-level are nevertheless
-stored at the person level (e.g. ``rent``) — caller decides how to fold
-them. The loader leaves those as person columns and the projection layer
-aggregates.
+* **populace** (default) is a pandas ``HDFStore`` / PyTables file: one
+  compound-dtype ``table`` dataset per entity (``person/table``,
+  ``household/table``, …). A column such as ``age`` is a field of
+  ``person/table``. See :class:`populace_loader.PopulaceReader`.
+* **Enhanced CPS** (legacy, as built by ``policyengine-us-data``) stores
+  one group per variable with a single year-keyed dataset inside, e.g.::
 
-The state-letter top-level groups in the h5 (`AK/`, `AL/`, …) are empty
-placeholders; the real data is the flat per-variable groups.
+      age/2024                  shape=(N_persons,)     float32
+      person_household_id/2024  shape=(N_persons,)     int32
+      household_id/2024         shape=(N_households,)  int32
+      household_weight/2024     shape=(N_households,)  float32
+      state_fips/2024           shape=(N_households,)  int32
+
+  (The state-letter top-level groups ``AK/``, ``AL/``, … are empty
+  placeholders; the real data is the flat per-variable groups.)
+
+Both sources present the join keys the same way — ``person_household_id``
+values match ``household_id`` values, ``person_tax_unit_id`` matches
+``tax_unit_id`` — so the ``household_id``-based remap below is unchanged.
+
+Some variables that are semantically household-level are stored at the
+person level (e.g. ``rent``) — the projection layer folds them.
 """
 
 from __future__ import annotations
 
 import os
+import warnings
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator, Protocol
 
 import h5py
 import numpy as np
+
+from .populace_loader import PopulaceReader, resolve_populace_path
 
 
 DEFAULT_ECPS_PATH = Path(
     os.environ.get("AXIOM_ECPS_PATH", str(Path.home() / "Downloads" / "enhanced_cps_2024.h5"))
 )
 
+# Legacy escape hatch: when set, the microsim reads this Enhanced CPS file
+# instead of the pinned populace artifact (with a DeprecationWarning).
+ECPS_ENV_VAR = "AXIOM_ECPS_PATH"
+
 DEFAULT_YEAR = "2024"
+
+
+# --- Population source resolution -------------------------------------------
+
+
+class _ColumnReader(Protocol):
+    """Reads a named 1-D column from an open population file."""
+
+    def read(self, var: str, year: str) -> np.ndarray: ...
+
+
+class _EcpsColumnReader:
+    """Flat ``variable/year`` reader for the legacy Enhanced CPS layout."""
+
+    def __init__(self, h5: h5py.File):
+        self._h5 = h5
+
+    def read(self, var: str, year: str) -> np.ndarray:
+        return _read(self._h5, var, year)
+
+
+class _PopulaceColumnReader:
+    """Adapter presenting populace entity tables as ``variable/year`` reads."""
+
+    def __init__(self, reader: PopulaceReader):
+        self._reader = reader
+
+    def read(self, var: str, year: str) -> np.ndarray:
+        # populace is a single-period file; ``year`` is accepted for
+        # interface parity but the file itself is the period.
+        return self._reader.column(var)
+
+
+@contextmanager
+def _open_population(path: Path | str | None) -> Iterator[_ColumnReader]:
+    """Open the resolved population source and yield a column reader.
+
+    Resolution order (matches the migration plan A2):
+
+    1. explicit ``path`` argument (either layout, sniffed);
+    2. ``$AXIOM_POPULACE_US_H5`` / pinned populace download (default);
+    3. ``$AXIOM_ECPS_PATH`` legacy Enhanced CPS (DeprecationWarning).
+    """
+    explicit = Path(path) if path else None
+    ecps_override = os.environ.get(ECPS_ENV_VAR)
+
+    if explicit is not None:
+        if not explicit.exists():
+            raise FileNotFoundError(f"population file not found at {explicit}.")
+        with h5py.File(explicit, "r") as f:
+            yield _reader_for(f)
+        return
+
+    if ecps_override:
+        # Legacy path chosen explicitly by the operator.
+        legacy = Path(ecps_override).expanduser()
+        if not legacy.exists():
+            raise FileNotFoundError(
+                f"{ECPS_ENV_VAR}={ecps_override!r} does not exist. Unset it to "
+                "use the pinned populace artifact (the default), or point it at "
+                "a valid Enhanced CPS file."
+            )
+        warnings.warn(
+            f"{ECPS_ENV_VAR} is set: axiom-microsim is reading the legacy "
+            "Enhanced CPS (policyengine-us-data) instead of the pinned "
+            "populace artifact. This path is deprecated; migrate to populace "
+            "(unset AXIOM_ECPS_PATH, or set AXIOM_POPULACE_US_H5 to a local "
+            "pinned copy). See axiom-rebuild-plan A2.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        with h5py.File(legacy, "r") as f:
+            yield _EcpsColumnReader(f)
+        return
+
+    # Default: pinned + sha256-verified populace artifact.
+    populace_path = resolve_populace_path()
+    with h5py.File(populace_path, "r") as f:
+        yield _PopulaceColumnReader(PopulaceReader(f))
+
+
+def _reader_for(f: h5py.File) -> _ColumnReader:
+    """Sniff an explicitly-passed file's layout and return the right reader.
+
+    populace files have entity groups (``person``, ``household``) each
+    containing a ``table`` dataset; Enhanced CPS files have flat
+    per-variable groups (``age``, ``household_weight``, …).
+    """
+    person = f.get("person")
+    if isinstance(person, h5py.Group) and "table" in person:
+        return _PopulaceColumnReader(PopulaceReader(f))
+    return _EcpsColumnReader(f)
+
 
 # Census FIPS codes for the 50 states + DC. Hand-encoded; no PE dependency.
 STATE_FIPS = {
@@ -180,29 +297,26 @@ def load_state(
     person_columns: Iterable[str] = DEFAULT_PERSON_COLUMNS,
     household_columns: Iterable[str] = DEFAULT_HOUSEHOLD_COLUMNS,
 ) -> EcpsBatch:
-    """Read all households in ``state`` from the Enhanced CPS file."""
+    """Read all households in ``state`` from the population source.
+
+    Reads the pinned populace artifact by default; ``$AXIOM_ECPS_PATH``
+    selects the legacy Enhanced CPS instead (deprecated). Pass ``path`` to
+    read a specific file of either layout.
+    """
     state = state.upper()
     if state not in STATE_FIPS:
         raise ValueError(f"unknown state code: {state!r}")
     fips = STATE_FIPS[state]
 
-    h5_path = Path(path) if path else DEFAULT_ECPS_PATH
-    if not h5_path.exists():
-        raise FileNotFoundError(
-            f"Enhanced CPS file not found at {h5_path}. Set AXIOM_ECPS_PATH or "
-            f"download enhanced_cps_2024.h5 from "
-            f"huggingface.co/policyengine/policyengine-us-data."
-        )
-
-    with h5py.File(h5_path, "r") as f:
-        household_ids = _read(f, "household_id", year)  # (H,)
-        household_state_fips = _read(f, "state_fips", year)  # (H,)
-        household_weight_all = _read(f, "household_weight", year)  # (H,)
-        person_hh_id = _read(f, "person_household_id", year)  # (P,)
+    with _open_population(path) as src:
+        household_ids = src.read("household_id", year)  # (H,)
+        household_state_fips = src.read("state_fips", year)  # (H,)
+        household_weight_all = src.read("household_weight", year)  # (H,)
+        person_hh_id = src.read("person_household_id", year)  # (P,)
 
         if not (household_ids.shape == household_state_fips.shape == household_weight_all.shape):
             raise RuntimeError(
-                "ECPS shape mismatch across household-level variables — h5 file is malformed."
+                "shape mismatch across household-level variables — population file is malformed."
             )
 
         hh_mask = household_state_fips == fips
@@ -225,11 +339,11 @@ def load_state(
 
         person_data: dict[str, np.ndarray] = {}
         for name in person_columns:
-            person_data[name] = _read(f, name, year)[person_pos]
+            person_data[name] = src.read(name, year)[person_pos]
 
         household_data: dict[str, np.ndarray] = {}
         for name in household_columns:
-            household_data[name] = _read(f, name, year)[hh_mask]
+            household_data[name] = src.read(name, year)[hh_mask]
 
     return EcpsBatch(
         state=state,
@@ -257,8 +371,8 @@ def load_state_tax_units(
     units (e.g. unmarried partners filing separately, an adult child).
     Tax-unit weight inherits from the parent household.
 
-    Pass ``state="US"`` to skip state filtering and load all 30k tax
-    units in the file — useful for federal-tax microsimulation.
+    Pass ``state="US"`` to skip state filtering and load every tax unit
+    in the file — useful for federal-tax microsimulation.
     """
     state = state.upper()
     nationwide = state in {"US", "ALL", "NATIONAL"}
@@ -266,16 +380,12 @@ def load_state_tax_units(
         raise ValueError(f"unknown state code: {state!r}")
     fips = None if nationwide else STATE_FIPS[state]
 
-    h5_path = Path(path) if path else DEFAULT_ECPS_PATH
-    if not h5_path.exists():
-        raise FileNotFoundError(f"Enhanced CPS file not found at {h5_path}")
-
-    with h5py.File(h5_path, "r") as f:
-        household_ids = _read(f, "household_id", year)
-        household_state_fips = _read(f, "state_fips", year)
-        household_weight_all = _read(f, "household_weight", year)
-        person_household_id = _read(f, "person_household_id", year)
-        person_tax_unit_id = _read(f, "person_tax_unit_id", year)
+    with _open_population(path) as src:
+        household_ids = src.read("household_id", year)
+        household_state_fips = src.read("state_fips", year)
+        household_weight_all = src.read("household_weight", year)
+        person_household_id = src.read("person_household_id", year)
+        person_tax_unit_id = src.read("person_tax_unit_id", year)
 
         # Filter households by state, then keep only those persons
         # (and the tax units they belong to). For nationwide, keep all.
@@ -316,7 +426,7 @@ def load_state_tax_units(
 
         person_data: dict[str, np.ndarray] = {}
         for name in person_columns:
-            person_data[name] = _read(f, name, year)[person_pos]
+            person_data[name] = src.read(name, year)[person_pos]
 
     return TaxUnitBatch(
         state=state,

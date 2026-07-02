@@ -24,12 +24,25 @@ from pathlib import Path
 import numpy as np
 
 
-ECPS_HF_PATH = "hf://policyengine/policyengine-us-data/enhanced_cps_2024.h5"
+# Population source for the PolicyEngine oracle side of /compare.
+#
+# Migrated 2026-07-02 (plan A2) from the deprecated policyengine-us-data
+# Enhanced CPS to the pinned **populace** artifact, so the PE oracle and
+# the Axiom microsim run on the *same* population (dense f0af251 pin — see
+# axiom_microsim/data/populace_loader.py for the #278 why-not-latest note).
+#
+# Priority: AXIOM_POPULACE_US_H5 (the Modal Volume copy) > legacy overrides
+# (deprecated) > the pinned populace hf:// URI with an immutable revision.
+POPULACE_HF_URI = (
+    "hf://policyengine/populace-us/populace_us_2024.h5"
+    "@populace-us-2024-f0af251-703bd81a565c-20260620T201958Z"
+)
 LOCAL_ECPS_PATH = Path("~/Downloads/enhanced_cps_2024.h5").expanduser()
 ECPS_PATH = (
-    os.environ.get("AXIOM_PE_ECPS_PATH")
-    or os.environ.get("AXIOM_ECPS_PATH")
-    or (str(LOCAL_ECPS_PATH) if LOCAL_ECPS_PATH.exists() else ECPS_HF_PATH)
+    os.environ.get("AXIOM_POPULACE_US_H5")
+    or os.environ.get("AXIOM_PE_ECPS_PATH")  # legacy override (deprecated)
+    or os.environ.get("AXIOM_ECPS_PATH")  # legacy override (deprecated)
+    or (str(LOCAL_ECPS_PATH) if LOCAL_ECPS_PATH.exists() else POPULACE_HF_URI)
 )
 NOISE_FLOOR = 1.0
 

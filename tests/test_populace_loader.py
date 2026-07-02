@@ -93,7 +93,9 @@ def test_pinned_download_uses_dataset_repo_and_revision(tmp_path, monkeypatch) -
         captured.update(repo_id=repo_id, repo_type=repo_type, filename=filename, revision=revision)
         return str(fake)
 
-    import huggingface_hub
+    # huggingface_hub is a declared runtime dependency; skip defensively if
+    # it is somehow absent so this assertion never masks an env problem.
+    huggingface_hub = pytest.importorskip("huggingface_hub")
 
     monkeypatch.setattr(huggingface_hub, "hf_hub_download", fake_download)
     monkeypatch.setattr(pl, "POPULACE_US_SHA256", hashlib.sha256(data).hexdigest())

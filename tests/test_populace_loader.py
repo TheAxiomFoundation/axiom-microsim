@@ -172,12 +172,8 @@ def test_reader_rejects_derived_names(tmp_path: Path) -> None:
     with h5py.File(p, "r") as f:
         r = pl.PopulaceReader(f)
         # Raw input concepts resolve.
-        np.testing.assert_array_equal(
-            r.column("pre_subsidy_rent"), [12000, 0, 0, 9000]
-        )
-        np.testing.assert_array_equal(
-            r.column("unemployment_compensation"), [0, 2500, 0, 0]
-        )
+        np.testing.assert_array_equal(r.column("pre_subsidy_rent"), [12000, 0, 0, 9000])
+        np.testing.assert_array_equal(r.column("unemployment_compensation"), [0, 2500, 0, 0])
         # Derived names fail loudly instead of being aliased.
         for derived in ("rent", "taxable_unemployment_compensation"):
             assert not r.has(derived)
@@ -209,9 +205,7 @@ def test_load_state_over_synthetic_populace(tmp_path: Path, monkeypatch) -> None
     assert batch.n_households == 2
     assert batch.n_persons == 4
     # Raw gross-rent concept, kept per person.
-    np.testing.assert_array_equal(
-        batch.person_columns["pre_subsidy_rent"], [12000, 0, 0, 9000]
-    )
+    np.testing.assert_array_equal(batch.person_columns["pre_subsidy_rent"], [12000, 0, 0, 9000])
     np.testing.assert_array_equal(batch.household_weight, [1000.0, 2000.0])
 
 

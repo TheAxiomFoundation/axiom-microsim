@@ -58,9 +58,11 @@ The Next.js app in `web/` reads `AXIOM_MICROSIM_URL` and POSTs to either.
   `brew install python@3.13`.
 * **Rust + maturin** — to build the dense extension. `curl https://sh.rustup.rs | sh -s -- -y`
   then `pip install maturin`.
-* **Enhanced CPS** `enhanced_cps_2024.h5` — download from
-  [huggingface.co/policyengine/policyengine-us-data](https://huggingface.co/policyengine/policyengine-us-data)
-  to `~/Downloads/` (default) or set `AXIOM_ECPS_PATH`.
+* **Population data** — none needed up front. The loader downloads the
+  pinned **populace** artifact (`populace_us_2024.h5`) from Hugging Face on
+  first use and sha256-verifies it. To avoid the download, point
+  `AXIOM_POPULACE_US_H5` at a local copy of the pinned file (still
+  verified). See "Population data" below for the pin and env vars.
 
 Build the dense extension once in your `axiom-rules-engine` checkout:
 
@@ -102,12 +104,66 @@ npm run dev                       # http://localhost:3000
 Adjust the SNAP max-allotment slider; the UI calls `/api/microsim`, which
 proxies to `AXIOM_MICROSIM_URL/microsim`.
 
+## Population data
+
+The microsim reads its population from PolicyEngine's **populace** project
+(migrated 2026-07-02 off the deprecated `policyengine-us-data` Enhanced CPS
+path; plan A2). The source is **pinned** — a specific, hash-verified
+release, resolved by `axiom_microsim/data/populace_loader.py`:
+
+| Field | Value |
+|---|---|
+| Repo | `policyengine/populace-us` (Hugging Face **dataset**) |
+| File | `populace_us_2024.h5` |
+| Revision | `populace-us-2024-f0af251-703bd81a565c-20260620T201958Z` |
+| sha256 | `16be6338f9d0b3c339883dae59949e995663b64cf145de6728b3dd0f916c5d5f` |
+
+**Resolution order** (both loaders — `load_state`, `load_state_tax_units`):
+
+1. explicit `path=` argument (either layout; auto-sniffed);
+2. `$AXIOM_POPULACE_US_H5` — a local copy of the pinned file (still
+   sha256-verified; skips the download, not the check);
+3. the pinned `hf_hub_download` of the revision above, then verified;
+4. `$AXIOM_ECPS_PATH` — **legacy** Enhanced CPS escape hatch (emits a
+   `DeprecationWarning`; only used if it is set).
+
+There is **no unpinned fallback**: a hash mismatch raises
+`PopulaceVerificationError` ("refusing to run on unverified population
+data") rather than silently running on the wrong data.
+
+### Why pinned *dense*, not Hugging Face `latest`
+
+`latest.json` and PolicyEngine bundle 4.18.8 currently point at the
+*sparse* refit artifact
+(`populace-us-2024-sparse-l0-refit-57k-…-national-only-20260701`), which
+**zeroes untargeted input bases** — IRA/HSA/self-employed pension/childcare
+and other engine inputs come back all-zero
+([PolicyEngine/populace#278](https://github.com/PolicyEngine/populace/issues/278),
+closed by pipeline-fix PR #279; a rebuilt sparse artifact is **not** yet
+published/certified). We pin the **dense** `f0af251` release — the last
+certified dense US population dataset — whose #278-class columns carry real
+mass. When a post-#279 sparse (or newer dense) release is certified with
+those bases confirmed non-zero, bump the pin in `populace_loader.py`.
+
+### populace layout note
+
+populace files are pandas `HDFStore` / PyTables tables (one compound-dtype
+`table` dataset per entity: `person/table`, `household/table`, …), unlike
+the legacy Enhanced CPS flat `variable/year` groups. The loader hides this
+behind a column-reader adapter, so the same state / tax-unit filtering code
+serves both. Only raw input concepts are readable: law-derived quantities
+(e.g. taxable unemployment compensation under 26 USC 85, subsidy-netted
+rent) are rule outputs and are rejected with a `KeyError` rather than
+aliased — projections consume the raw inputs (`unemployment_compensation`,
+`pre_subsidy_rent`) and the legal transformation belongs in encoded rules.
+
 ## Layout
 
 ```
 axiom_microsim/
-  data/ecps_loader.py        # h5py reader, state filter, EcpsBatch
-  project/co_snap.py         # ECPS columns → CO SNAP dense inputs
+  data/populace_loader.py    # pinned populace: resolve + sha256-verify + read
+  data/ecps_loader.py        # source resolution, state filter, EcpsBatch/TaxUnitBatch
+  project/co_snap.py         # population columns → CO SNAP dense inputs
   run/microsim.py            # CompiledDenseProgram wrapper + reform overrides
   aggregate/cost.py          # Σ benefit × weight
   aggregate/distribution.py  # weighted decile groupby

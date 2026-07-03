@@ -71,7 +71,11 @@ INCOME_COLUMNS: tuple[str, ...] = (
     "farm_income",
     "estate_income",
     "alimony_income",
-    "taxable_unemployment_compensation",
+    # Gross UC is the raw input; the taxable amount is law (26 USC 85),
+    # so it belongs in rules, not in population data. Under post-2021 law
+    # the two are equal (the §85(c) exclusion applied to 2020 only); a
+    # RuleSpec encoding of §85 retires this line along with the AGI proxy.
+    "unemployment_compensation",
     "social_security",
     "miscellaneous_income",
 )

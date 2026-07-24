@@ -83,7 +83,7 @@ export function MethodologyPeSection() {
       ))}
       <p className="text-xs text-ink-muted">
         For the live runner with reform sliders, see{" "}
-        <a href="/" className="text-accent underline">/</a>
+        <a href="/microsim" className="text-accent underline">/</a>
         .
       </p>
     </div>
@@ -102,7 +102,7 @@ function PeRow({ scope }: { scope: ScopeSpec }) {
     const startedAt = Date.now();
     setRun({ result: null, running: true, startedAt, error: null });
     try {
-      const r = await fetch("/api/compare", {
+      const r = await fetch("/microsim/api/compare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ program: scope.id, state: scope.state, year: 2026 }),

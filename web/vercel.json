@@ -1,6 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "https://axiom.org/microsim",
+      "permanent": true
+    }
+  ],
   "functions": {
     "src/app/api/microsim/route.ts": { "maxDuration": 60 },
     "src/app/api/compare/route.ts": { "maxDuration": 300 },

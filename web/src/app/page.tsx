@@ -69,7 +69,7 @@ export default function Page() {
       setter((prev) => ({ ...prev, startedAt, error: null }));
       const body: MicrosimRequest = { program: programId, state, year: YEAR, overrides };
       try {
-        const r = await fetch("/microsim/api/microsim", {
+        const r = await fetch("/gallery/microsim/api/microsim", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -122,7 +122,7 @@ export default function Page() {
       const startedAt = Date.now();
       setter({ result: null, startedAt, error: null });
       try {
-        const r = await fetch("/microsim/api/compare", {
+        const r = await fetch("/gallery/microsim/api/compare", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -511,7 +511,7 @@ export default function Page() {
           : ""}
         <code className="font-mono">enhanced_cps_2024.h5</code> ·{" "}
         <code className="font-mono">axiom-rules-engine</code> ·{" "}
-        <a href="/microsim/methodology" className="text-accent underline">
+        <a href="/gallery/microsim/methodology" className="text-accent underline">
           methodology
         </a>
       </footer>

@@ -4,8 +4,18 @@
   "redirects": [
     {
       "source": "/",
-      "destination": "https://axiom.org/microsim",
+      "destination": "https://axiom.org/gallery/microsim",
       "permanent": true
+    },
+    {
+      "source": "/microsim",
+      "destination": "/gallery/microsim",
+      "permanent": false
+    },
+    {
+      "source": "/microsim/:path(.*)",
+      "destination": "/gallery/microsim/:path(.*)",
+      "permanent": false
     }
   ],
   "functions": {

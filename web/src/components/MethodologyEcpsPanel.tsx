@@ -53,7 +53,7 @@ function ScopePanel({
 
   useEffect(() => {
     setError(null);
-    fetch(`/microsim/api/ecps-stats?program=${program}&state=${state}`)
+    fetch(`/gallery/microsim/api/ecps-stats?program=${program}&state=${state}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
         return r.json();

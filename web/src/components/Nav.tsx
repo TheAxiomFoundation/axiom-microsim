@@ -23,7 +23,7 @@ export function Nav() {
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/microsim/axiom-foundation.svg"
+              src="/gallery/microsim/axiom-foundation.svg"
               alt="Axiom Foundation"
               width={100}
               className="block h-auto w-full"

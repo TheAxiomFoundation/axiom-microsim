@@ -126,7 +126,7 @@ export default function Page() {
       setter((prev) => ({ ...prev, loadingMs: 0, startedAt, error: null }));
       const body: MicrosimRequest = { program: programId, state, year: YEAR, overrides };
       try {
-        const r = await fetch("/api/microsim", {
+        const r = await fetch("/microsim/api/microsim", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -183,7 +183,7 @@ export default function Page() {
     const startedAt = Date.now();
     setPeReform({ total: null, baselineTotal: null, filers: null, avg: null, loadingMs: 0, startedAt, error: null });
     try {
-      const r = await fetch("/api/compare", {
+      const r = await fetch("/microsim/api/compare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -226,7 +226,7 @@ export default function Page() {
     const startedAt = Date.now();
     setPe((prev) => ({ ...prev, loadingMs: 0, startedAt, error: null }));
     try {
-      const r = await fetch("/api/compare", {
+      const r = await fetch("/microsim/api/compare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ program: programId, state, year: YEAR }),
@@ -606,7 +606,7 @@ export default function Page() {
         {baseline.data?.n_persons_sampled.toLocaleString() ?? "—"} persons ·{" "}
         <code className="font-mono">enhanced_cps_2024.h5</code> · engine{" "}
         <code className="font-mono">axiom-rules-engine</code>. See{" "}
-        <a href="/methodology" className="text-accent underline">/methodology</a>{" "}
+        <a href="/microsim/methodology" className="text-accent underline">/methodology</a>{" "}
         for slot mappings, calculations, and limitations.
       </footer>
     </main>

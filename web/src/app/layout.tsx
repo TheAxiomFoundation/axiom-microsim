@@ -35,14 +35,16 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://axiom.org/microsim"),
   title: "axiom-microsim — CO SNAP",
   description: "PE-free microsimulation over Enhanced CPS using axiom-rules-engine",
   icons: {
+    // basePath does not apply to metadata icon URLs — prefix explicitly.
     icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
-      { url: "/axiom-icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/microsim/favicon.svg", type: "image/svg+xml" },
+      { url: "/microsim/axiom-icon-512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: "/axiom-icon-512.png",
+    apple: "/microsim/axiom-icon-512.png",
   },
 };
 

@@ -16,7 +16,12 @@ jobs:
           path: _axiom/axiom-rules-engine
       - uses: astral-sh/setup-uv@v8.1.0
       - run: uv python install 3.14
-      - run: uv venv --python 3.14 && uv pip install -e ".[dev]" -e _axiom/axiom-rules-engine/python
+      # `uv sync` resolves from uv.lock, so the linter version is pinned. The
+      # previous `uv pip install -e ".[dev]"` ignored the lockfile and re-resolved
+      # `ruff>=0.4` on every run, so a ruff release turned main red on 2026-07-24
+      # with no code change. The engine wheel is path-only and stays a pip install.
+      - run: uv sync --locked --extra dev
+      - run: uv pip install -e _axiom/axiom-rules-engine/python
       - run: .venv/bin/ruff check axiom_microsim tests
       - run: .venv/bin/ruff format --check axiom_microsim tests
       # Engine-dependent and ECPS-dependent tests self-skip without the

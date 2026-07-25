@@ -329,7 +329,7 @@ def _patched_program_for_fed_income_tax(
     for ov in overrides:
         if ov.repo != "rules-us":
             raise ValueError(f"federal-income-tax overrides must target rules-us, got {ov.repo}")
-        _patch_yaml(dst / ov.file_relative, ov)
+        _patch_yaml(_resolve_override_target(dst, ov.file_relative), ov)
     return dst / FED_INCOME_TAX_PROGRAM_REL, scratch
 
 
@@ -423,8 +423,8 @@ def _artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path
     shutil.copytree(RULES_US_DIR, dst_us, symlinks=False)
     shutil.copytree(RULES_US_CO_DIR, dst_us_co, symlinks=False)
     for ov in overrides:
-        target = (dst_us if ov.repo == "rules-us" else dst_us_co) / ov.file_relative
-        _patch_yaml(target, ov)
+        target_root = dst_us if ov.repo == "rules-us" else dst_us_co
+        _patch_yaml(_resolve_override_target(target_root, ov.file_relative), ov)
 
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     out = ARTIFACTS_DIR / f".tmp-{scratch.name}.compiled.json"
@@ -450,7 +450,7 @@ def _ctc_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, 
     for ov in overrides:
         if ov.repo != "rules-us":
             raise ValueError(f"federal-ctc overrides must target rules-us, got {ov.repo}")
-        _patch_yaml(dst / ov.file_relative, ov)
+        _patch_yaml(_resolve_override_target(dst, ov.file_relative), ov)
 
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     out = ARTIFACTS_DIR / f".tmp-{scratch.name}.compiled.json"
@@ -605,7 +605,7 @@ def _fed_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, 
             raise ValueError(
                 f"federal-income-tax reform overrides must target rules-us, got {ov.repo}"
             )
-        _patch_yaml(dst / ov.file_relative, ov)
+        _patch_yaml(_resolve_override_target(dst, ov.file_relative), ov)
 
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     out = ARTIFACTS_DIR / f".tmp-{scratch.name}.compiled.json"
@@ -915,6 +915,27 @@ def _collect_outputs(
 
 
 # --- YAML patching -----------------------------------------------------------
+
+
+def _resolve_override_target(root: Path, file_relative: str) -> Path:
+    """Resolve ``file_relative`` against ``root``, refusing to leave it.
+
+    ``file_relative`` arrives from the HTTP surface, so it is untrusted. Plain
+    ``root / file_relative`` is not safe: an absolute path silently discards
+    ``root`` entirely, and ``..`` segments walk out of it. Resolve the joined
+    path and require the result to stay under the resolved root, which also
+    catches escapes through a symlinked rule file.
+    """
+    if not file_relative or Path(file_relative).is_absolute():
+        raise ValueError(f"file_relative must be a relative path, got {file_relative!r}")
+    if ".." in Path(file_relative).parts:
+        raise ValueError(f"file_relative must not contain '..', got {file_relative!r}")
+
+    resolved_root = root.resolve()
+    target = (resolved_root / file_relative).resolve()
+    if not target.is_relative_to(resolved_root):
+        raise ValueError(f"file_relative escapes the rules root: {file_relative!r}")
+    return target
 
 
 def _patch_yaml(path: Path, override: ParameterOverride) -> None:

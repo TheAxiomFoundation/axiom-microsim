@@ -1,18 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 
 // /methodology stays routable but is intentionally unlisted here.
-const LINKS = [{ href: "/", label: "Microsim" }];
 
 export function Nav() {
-  const pathname = usePathname();
   return (
     <nav className="border-b border-rule bg-paper-elev">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-6 py-4 sm:gap-6">
-        {/* Axiom Foundation wordmark links out; the 'microsim' label
-            links to the runner. Two separate anchors — they can't nest. */}
+        {/* Axiom Foundation wordmark links out; the title block links to
+            the runner. Two separate anchors — they can't nest. */}
         <div className="flex items-center gap-3">
           <a
             href="https://axiom-foundation.org"
@@ -27,38 +24,20 @@ export function Nav() {
               className="block h-auto w-full"
             />
           </a>
-          <Link href="/" className="border-l border-rule pl-3 no-underline" aria-label="microsim">
-            <div className="font-mono text-[0.6rem] uppercase tracking-eyebrow text-ink-muted">
+          <Link href="/" className="border-l border-rule pl-3 no-underline" aria-label="Microsim">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted">
               Interactive
             </div>
-            <div className="font-serif text-base leading-tight text-ink">microsim</div>
+            <div className="font-serif text-base leading-tight text-ink">Microsim</div>
           </Link>
         </div>
 
-        <div className="flex items-center gap-1">
-          {LINKS.map((l) => {
-            const active = l.href === "/" ? pathname === "/" : pathname?.startsWith(l.href);
-            return (
-              <Link
-                key={l.href}
-                href={l.href}
-                className={`rounded-sm px-3 py-1.5 text-sm transition ${
-                  active
-                    ? "bg-accent-light text-accent"
-                    : "text-ink-secondary hover:bg-rule-subtle"
-                }`}
-              >
-                {l.label}
-              </Link>
-            );
-          })}
-          <a
-            href="https://axiom-foundation.org/demos"
-            className="rounded-sm px-3 py-1.5 text-sm text-ink-secondary transition hover:bg-rule-subtle"
-          >
-            All demos
-          </a>
-        </div>
+        <a
+          href="https://axiom.org/demos"
+          className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink-muted no-underline transition hover:text-accent hover:underline"
+        >
+          All demos
+        </a>
       </div>
     </nav>
   );

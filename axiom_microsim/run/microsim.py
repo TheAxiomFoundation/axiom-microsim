@@ -283,11 +283,13 @@ def run_federal_income_tax(
     projection = project_federal_income_tax(batch, period_year=period_year)
 
     # Reform: patch YAML in a scratch tree, dense-compile from the
-    # scratch program. Dense compile is ~5 ms.
+    # scratch program. Dense compile is ~5 ms. Baseline compiles from a
+    # persistent staged tree so `us:` ids/imports resolve (see
+    # _staged_rules_trees).
     if overrides:
         program_path, scratch = _patched_program_for_fed_income_tax(overrides)
     else:
-        program_path, scratch = FED_INCOME_TAX_BASELINE_PROGRAM, None
+        program_path, scratch = _baseline_rules_us_root() / FED_INCOME_TAX_PROGRAM_REL, None
 
     try:
         out = _execute_fed_income_tax_dense(projection, program_path, period_year, outputs)
@@ -314,18 +316,9 @@ FED_INCOME_TAX_BASELINE_PROGRAM = RULES_US_DIR / FED_INCOME_TAX_PROGRAM_REL
 def _patched_program_for_fed_income_tax(
     overrides: list[ParameterOverride],
 ) -> tuple[Path, Path]:
-    """Copy rules-us to a scratch tree, patch, return (program_yaml, scratch_root).
-
-    Scratch dir is always named ``rulespec-us`` so the engine's import
-    resolver finds it via ancestor traversal regardless of how the
-    source dir is named locally (`rules-us` symlink) or in Modal
-    (`rulespec-us`).
-    """
-    if not RULES_US_DIR.exists():
-        raise FileNotFoundError(f"rules-us missing at {RULES_US_DIR}")
-    scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-fed-dense-"))
+    """Copy rules-us to a scratch tree, patch, return (program_yaml, scratch_root)."""
+    scratch = _staged_rules_trees()
     dst = scratch / "rulespec-us"
-    shutil.copytree(RULES_US_DIR, dst, symlinks=False)
     for ov in overrides:
         if ov.repo != "rules-us":
             raise ValueError(f"federal-income-tax overrides must target rules-us, got {ov.repo}")
@@ -402,26 +395,60 @@ def _slots() -> tuple[list[_SlotSpec], list[_SlotSpec]]:
 # --- Compile / patch ---------------------------------------------------------
 
 
+def _staged_rules_trees(*, include_co: bool = False) -> Path:
+    """Copy the rules checkouts into a scratch tree under canonical names.
+
+    The engine derives canonical ``us:`` rule ids from a ``rulespec-``
+    path component (after resolving symlinks), so compiling from a
+    checkout named ``rules-us`` yields an artifact with no absolute
+    ids — and every request keyed by legal id then fails. Staging under
+    ``rulespec-us`` / ``rulespec-us-co`` keeps ids intact regardless of
+    how the local checkout is named. Caller removes the scratch dir.
+    """
+    if not RULES_US_DIR.exists():
+        raise FileNotFoundError(f"rules-us missing at {RULES_US_DIR}")
+    if include_co and not RULES_US_CO_DIR.exists():
+        raise FileNotFoundError(f"rules-us-co missing at {RULES_US_CO_DIR}")
+    scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-rules-"))
+    shutil.copytree(RULES_US_DIR, scratch / "rulespec-us", symlinks=False)
+    if include_co:
+        shutil.copytree(RULES_US_CO_DIR, scratch / "rulespec-us-co", symlinks=False)
+    return scratch
+
+
+_BASELINE_RULES_SCRATCH: Path | None = None
+
+
+def _baseline_rules_us_root() -> Path:
+    """A rules-us tree whose path contains a ``rulespec-`` component.
+
+    Used for baseline compiles that read YAML directly (no patching).
+    If the checkout already resolves to a canonical name (Modal), use it
+    as-is; otherwise stage one persistent copy per process and reuse it.
+    """
+    global _BASELINE_RULES_SCRATCH
+    if any(part.startswith("rulespec-") for part in RULES_US_DIR.resolve().parts):
+        return RULES_US_DIR
+    if _BASELINE_RULES_SCRATCH is None or not _BASELINE_RULES_SCRATCH.exists():
+        _BASELINE_RULES_SCRATCH = _staged_rules_trees()
+    return _BASELINE_RULES_SCRATCH / "rulespec-us"
+
+
 def _artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path | None]:
     """Return ``(artifact_path, scratch_to_clean_or_None)``."""
     if not overrides:
         if not CO_SNAP_BASELINE_ARTIFACT.exists():
-            _compile(CO_SNAP_BASELINE_PROGRAM, CO_SNAP_BASELINE_ARTIFACT)
+            scratch = _staged_rules_trees(include_co=True)
+            try:
+                ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+                _compile(scratch / "rulespec-us-co" / CO_SNAP_PROGRAM_REL, CO_SNAP_BASELINE_ARTIFACT)
+            finally:
+                shutil.rmtree(scratch, ignore_errors=True)
         return CO_SNAP_BASELINE_ARTIFACT, None
 
-    if not RULES_US_DIR.exists() or not RULES_US_CO_DIR.exists():
-        raise FileNotFoundError(
-            f"Rulespec dirs missing — expected {RULES_US_DIR} and {RULES_US_CO_DIR}. "
-            "Run scripts/setup_engine.sh once."
-        )
-    scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-"))
-    # Preserve the source dir name so the engine's import resolver
-    # finds it via ancestor traversal. In Modal these are
-    # `rulespec-us` / `rulespec-us-co`; locally `rules-us` / etc.
-    dst_us = scratch / RULES_US_DIR.name
-    dst_us_co = scratch / RULES_US_CO_DIR.name
-    shutil.copytree(RULES_US_DIR, dst_us, symlinks=False)
-    shutil.copytree(RULES_US_CO_DIR, dst_us_co, symlinks=False)
+    scratch = _staged_rules_trees(include_co=True)
+    dst_us = scratch / "rulespec-us"
+    dst_us_co = scratch / "rulespec-us-co"
     for ov in overrides:
         target_root = dst_us if ov.repo == "rules-us" else dst_us_co
         _patch_yaml(_resolve_override_target(target_root, ov.file_relative), ov)
@@ -434,19 +461,19 @@ def _artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path
 
 def _ctc_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path | None]:
     """Compile §24(h) (with optional reform overrides) and return artifact path."""
-    program_path = RULES_US_DIR / FED_CTC_PROGRAM_REL
     if not overrides:
         baseline = ARTIFACTS_DIR / "federal-ctc.compiled.json"
         if not baseline.exists():
-            ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-            _compile(program_path, baseline)
+            scratch = _staged_rules_trees()
+            try:
+                ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+                _compile(scratch / "rulespec-us" / FED_CTC_PROGRAM_REL, baseline)
+            finally:
+                shutil.rmtree(scratch, ignore_errors=True)
         return baseline, None
 
-    if not RULES_US_DIR.exists():
-        raise FileNotFoundError(f"rules-us missing at {RULES_US_DIR}")
-    scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-ctc-"))
-    dst = scratch / RULES_US_DIR.name  # preserve naming so engine resolves imports
-    shutil.copytree(RULES_US_DIR, dst, symlinks=False)
+    scratch = _staged_rules_trees()
+    dst = scratch / "rulespec-us"
     for ov in overrides:
         if ov.repo != "rules-us":
             raise ValueError(f"federal-ctc overrides must target rules-us, got {ov.repo}")
@@ -586,20 +613,20 @@ def _execute_ctc(
 
 def _fed_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path | None]:
     """Compile §1(j) (with optional reform overrides) and return artifact path."""
-    program_path = RULES_US_DIR / FED_INCOME_TAX_PROGRAM_REL
     if not overrides:
         baseline = ARTIFACTS_DIR / "federal-income-tax.compiled.json"
         if not baseline.exists():
-            ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-            _compile(program_path, baseline)
+            scratch = _staged_rules_trees()
+            try:
+                ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+                _compile(scratch / "rulespec-us" / FED_INCOME_TAX_PROGRAM_REL, baseline)
+            finally:
+                shutil.rmtree(scratch, ignore_errors=True)
         return baseline, None
 
     # Reform: copy the rules-us tree, patch, recompile.
-    if not RULES_US_DIR.exists():
-        raise FileNotFoundError(f"rules-us missing at {RULES_US_DIR}")
-    scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-fed-"))
-    dst = scratch / RULES_US_DIR.name  # preserve naming
-    shutil.copytree(RULES_US_DIR, dst, symlinks=False)
+    scratch = _staged_rules_trees()
+    dst = scratch / "rulespec-us"
     for ov in overrides:
         if ov.repo != "rules-us":
             raise ValueError(

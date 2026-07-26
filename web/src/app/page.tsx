@@ -55,8 +55,6 @@ export default function Page() {
   const baselineCache = useRef<Map<string, MicrosimResponse>>(new Map());
   const peCache = useRef<Map<string, PeResult>>(new Map());
   const peReformCache = useRef<Map<string, PeResult>>(new Map());
-  // Guards the auto-run against StrictMode double-fire and repeat renders.
-  const autoRunKey = useRef<string | null>(null);
 
   const runMicrosim = useCallback(
     async (kind: "baseline" | "reform", values: Record<string, number>) => {
@@ -157,8 +155,8 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [programId]);
 
-  // On program/scope change: reset sliders, hydrate from caches, and
-  // auto-run the baseline if we don't have it yet.
+  // On program/scope change: reset sliders and hydrate from caches.
+  // Runs are always explicit — nothing computes until a button is clicked.
   useEffect(() => {
     if (!program.state_choices.includes(state)) return;
     setDraft(initialDraft(programId));
@@ -170,18 +168,8 @@ export default function Page() {
     setBaseline(cb ? { data: cb, startedAt: null, error: null } : initial);
     const cp = peCache.current.get(k);
     setPe(cp ? { result: cp, startedAt: null, error: null } : peInitial);
-    if (!cb && autoRunKey.current !== k) {
-      autoRunKey.current = k;
-      void runMicrosim("baseline", initialDraft(programId));
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [programId, state]);
-
-  // Checking the PE box fetches the PE baseline for the current combo.
-  useEffect(() => {
-    if (peEnabled && pe.result === null && pe.startedAt === null && !pe.error) void runPe(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [peEnabled, programId, state]);
 
   const draftReforming = useMemo(
     () => program.levers.some((l) => draft[l.id] !== l.baseline),
@@ -201,6 +189,12 @@ export default function Page() {
     const id = setInterval(() => setNow(Date.now()), 200);
     return () => clearInterval(id);
   }, [anyRunning]);
+
+  const onRunBaseline = () => {
+    if (baseline.startedAt !== null) return;
+    void runMicrosim("baseline", initialDraft(programId));
+    if (peEnabled) void runPe(null);
+  };
 
   const onRunReform = () => {
     if (!draftReforming || !dirty) return;
@@ -289,6 +283,30 @@ export default function Page() {
         </div>
       )}
 
+      {/* ---- Run baseline ---- */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <button
+          onClick={onRunBaseline}
+          disabled={baseline.startedAt !== null}
+          className={`rounded-sm px-5 py-2 text-sm font-semibold transition ${
+            baseline.startedAt !== null
+              ? "cursor-wait bg-accent-hover text-white"
+              : "bg-accent text-white hover:bg-accent-hover"
+          }`}
+        >
+          {baseline.startedAt !== null
+            ? `Running… ${elapsed(baseline.startedAt)}s`
+            : baseline.data
+              ? "Re-run baseline"
+              : "Run baseline"}
+        </button>
+        {peEnabled && (
+          <span className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
+            PolicyEngine runs alongside
+          </span>
+        )}
+      </div>
+
       {/* ---- Headline numbers ---- */}
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <StatCard
@@ -303,7 +321,7 @@ export default function Page() {
           hint={
             baseline.data
               ? `${fmtCount(baseline.data.baseline.households_with_benefit)} ${unitLabel} · avg ${fmtCurrency(baseline.data.baseline.average_monthly_benefit)}`
-              : undefined
+              : "run the baseline first"
           }
           peValue={
             pe.startedAt !== null
@@ -428,7 +446,9 @@ export default function Page() {
               </div>
             ) : (
               <div className="py-12 text-center text-sm text-ink-muted">
-                {baseline.startedAt !== null ? `Computing baseline… ${elapsed(baseline.startedAt)}s` : "Baseline loads automatically."}
+                {baseline.startedAt !== null
+                  ? `Computing baseline… ${elapsed(baseline.startedAt)}s`
+                  : "Run the baseline to load the distribution."}
               </div>
             )}
           </ChartCard>

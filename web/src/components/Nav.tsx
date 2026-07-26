@@ -17,13 +17,13 @@ export function Nav() {
             links to the runner. Two separate anchors — they can't nest. */}
         <div className="flex items-center gap-3">
           <a
-            href="https://axiomfoundation.org"
+            href="https://axiom-foundation.org"
             className="inline-flex w-[100px] shrink-0"
             aria-label="Axiom Foundation"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/microsim/axiom-foundation.svg"
+              src="/gallery/microsim/axiom-foundation.svg"
               alt="Axiom Foundation"
               width={100}
               className="block h-auto w-full"
@@ -54,6 +54,12 @@ export function Nav() {
               </Link>
             );
           })}
+          <a
+            href="https://axiom-foundation.org/demos"
+            className="rounded-sm px-3 py-1.5 text-sm text-ink-secondary transition hover:bg-rule-subtle"
+          >
+            All demos
+          </a>
         </div>
       </div>
     </nav>

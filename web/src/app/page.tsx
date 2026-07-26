@@ -307,7 +307,7 @@ export default function Page() {
         )}
       </div>
 
-      {/* ---- Headline numbers ---- */}
+      {/* ---- Baseline number ---- */}
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <StatCard
           label={`${program.headline_label} · baseline`}
@@ -331,36 +331,6 @@ export default function Page() {
                 : undefined
           }
           peRatio={ratio(baseline.data?.baseline.annual_cost, pe.result?.total)}
-        />
-        <StatCard
-          label={`${program.headline_label} · reform`}
-          value={
-            reform.startedAt !== null
-              ? `running… ${elapsed(reform.startedAt)}s`
-              : reform.data?.reform
-                ? fmtCurrency(reform.data.reform.reform_annual_cost)
-                : "—"
-          }
-          hint={reform.data?.reform ? undefined : "move a slider, then run"}
-          peValue={
-            peReform.startedAt !== null
-              ? `running… ${elapsed(peReform.startedAt)}s`
-              : peReform.result
-                ? fmtCurrency(peReform.result.total)
-                : undefined
-          }
-          peRatio={ratio(reform.data?.reform?.reform_annual_cost, peReform.result?.total)}
-        />
-        <StatCard
-          label="Change vs baseline"
-          value={reformDelta != null ? fmtSignedCurrency(reformDelta) : "—"}
-          hint={
-            reformDelta != null && reform.data?.reform && reform.data.reform.baseline_annual_cost !== 0
-              ? `${((reformDelta / reform.data.reform.baseline_annual_cost) * 100).toFixed(1)}% of baseline`
-              : undefined
-          }
-          peValue={peDelta != null ? fmtSignedCurrency(peDelta) : undefined}
-          peRatio={ratio(reformDelta, peDelta)}
         />
       </div>
 
@@ -407,6 +377,41 @@ export default function Page() {
           )}
         </div>
       </section>
+
+      {/* ---- Reform results (only once a reform runs) ---- */}
+      {(reform.data?.reform || reform.startedAt !== null) && (
+        <div className="mb-6 grid gap-3 sm:grid-cols-3">
+          <StatCard
+            label={`${program.headline_label} · reform`}
+            value={
+              reform.startedAt !== null
+                ? `running… ${elapsed(reform.startedAt)}s`
+                : reform.data?.reform
+                  ? fmtCurrency(reform.data.reform.reform_annual_cost)
+                  : "—"
+            }
+            peValue={
+              peReform.startedAt !== null
+                ? `running… ${elapsed(peReform.startedAt)}s`
+                : peReform.result
+                  ? fmtCurrency(peReform.result.total)
+                  : undefined
+            }
+            peRatio={ratio(reform.data?.reform?.reform_annual_cost, peReform.result?.total)}
+          />
+          <StatCard
+            label="Change vs baseline"
+            value={reformDelta != null ? fmtSignedCurrency(reformDelta) : "—"}
+            hint={
+              reformDelta != null && reform.data?.reform && reform.data.reform.baseline_annual_cost !== 0
+                ? `${((reformDelta / reform.data.reform.baseline_annual_cost) * 100).toFixed(1)}% of baseline`
+                : undefined
+            }
+            peValue={peDelta != null ? fmtSignedCurrency(peDelta) : undefined}
+            peRatio={ratio(reformDelta, peDelta)}
+          />
+        </div>
+      )}
 
       {/* ---- Charts ---- */}
       <div className="space-y-4">
@@ -577,7 +582,7 @@ function ChartCard({
 function decileMetricLabel(programId: ProgramId): string {
   if (programId === "co-snap") return "Mean monthly SNAP";
   if (programId === "federal-income-tax") return "Mean income tax per tax unit";
-  return "Mean CTC per tax unit";
+  return "Mean max CTC per tax unit";
 }
 
 function fmtSignedCurrency(n: number): string {

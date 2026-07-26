@@ -70,10 +70,11 @@ const FEDERAL_CTC: Program = {
   id: "federal-ctc",
   name: "Federal Child Tax Credit — IRC §24(h)",
   short: "Federal CTC",
-  blurb: "",
+  blurb:
+    "Maximum credit before the §24(b) income phase-out and refundability limits — those are not yet encoded in rulespec-us, so this is an upper bound on the credit actually claimed. The PolicyEngine comparison shows its post-phase-out ctc_value.",
   default_state: "US",
   state_choices: ["US", "CA", "TX", "NY", "FL", "CO", "WA", "MA", "IL"],
-  headline_label: "Annual CTC cost",
+  headline_label: "Max CTC before phase-out",
   winners_label: "Winners",
   losers_label: "Losers",
   levers: [

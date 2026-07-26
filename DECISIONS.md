@@ -84,3 +84,33 @@ which transport is on the other side.
 
 **Why.** Halves the surface area to test. Avoids the trap where Modal
 diverges silently from local dev.
+
+## D7 — The CTC headline is the credit after phase-out, not the final value
+
+**Decision.** `federal-ctc` runs the parent `statutes/26/24.yaml` program and
+reports `ctc_before_advance_payments`: the §24 credit after the §24(b)(1)
+income phase-out, using §24(h)'s post-2017 amounts. The PolicyEngine
+comparison requests `ctc`, the same quantity. Neither side applies the
+§26(a) tax-liability limitation or the §24(d) refundable split.
+
+**Why.** v1 summed `ctc_maximum_before_phase_out_under_subsection_h` while
+the UI called it "Annual CTC cost" and offered a phase-out-threshold
+slider, and the comparison asked PolicyEngine for post-phase-out
+`ctc_value` (issue #11). Moving the slider changed PE's number and not
+Axiom's, which reads as the engines disagreeing when they were computing
+different quantities.
+
+Going further — to PE's `ctc_value` — is not a labelling problem, it is a
+modelling one: `ctc_value = min(ctc, ctc_limiting_tax_liability +
+refundable_ctc)`, and `ctc_limiting_tax_liability` is income tax before
+credits net of *every other* non-refundable credit, computed on a
+no-SALT branch. This microsim's §1(j) leg is ordinary-rate tax only. A
+partial liability limit would have replaced a visible mismatch with an
+invisible one.
+
+**How to apply.** The headline output is named once, as
+`FED_CTC_HEADLINE_OUTPUT` in `run/microsim.py`. The label and the
+PolicyEngine variable travel with it in `server.MEASURES` and reach the UI
+in the response's `measure` block — a client that captions the number
+locally can drift from it again, so don't. When the liability limit and
+refundable split are modelled, change all three in that one registry.

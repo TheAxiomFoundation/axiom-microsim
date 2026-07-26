@@ -62,19 +62,23 @@ export interface Program {
   losers_label: string;
 }
 
-// --- Program: Federal CTC §24(h) ---------------------------------------------
+// --- Program: Federal CTC §24 ------------------------------------------------
 
+// The sliders patch parameters in the §24(h) module; the program Axiom runs
+// is the parent §24 module, which imports those amounts and applies the
+// §24(b)(1) phase-out to them.
 const CTC_FILE = "statutes/26/24/h.yaml";
 
 const FEDERAL_CTC: Program = {
   id: "federal-ctc",
-  name: "Federal Child Tax Credit — IRC §24(h)",
+  name: "Federal Child Tax Credit — IRC §24",
   short: "Federal CTC",
   blurb:
-    "Maximum credit before the §24(b) income phase-out and refundability limits — those are not yet encoded in rulespec-us, so this is an upper bound on the credit actually claimed. The PolicyEngine comparison shows its post-phase-out ctc_value.",
+    "The §24 credit after the income phase-out, using the post-2017 amounts in §24(h). Before the tax-liability limit and the refundable split.",
   default_state: "US",
   state_choices: ["US", "CA", "TX", "NY", "FL", "CO", "WA", "MA", "IL"],
-  headline_label: "Max CTC before phase-out",
+  // Fallback only — the server sends the label with the number it describes.
+  headline_label: "Annual CTC after phase-out",
   winners_label: "Winners",
   losers_label: "Losers",
   levers: [
@@ -126,7 +130,7 @@ const FEDERAL_CTC: Program = {
       id: "ctc_joint_phase_out",
       label: "Joint phase-out threshold",
       description:
-        "Where the per-credit phase-out begins for joint filers under §24(h)(3).",
+        "Modified AGI at which a joint filer's credit starts falling — $50 per $1,000 above it, under §24(h)(3) and §24(b)(1).",
       baseline_label: "$400,000 (current law)",
       kind: "amount",
       baseline: 400_000,

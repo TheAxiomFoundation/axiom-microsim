@@ -144,6 +144,36 @@ def test_compare_endpoint_accepts_rich_pe_outputs(monkeypatch, tmp_path) -> None
     assert data["pe_poverty_impact"]["delta_poverty_rate"] == -0.25
 
 
+def test_ctc_comparison_requests_the_like_for_like_pe_variable() -> None:
+    """Issue #11: `ctc_value` also applies the §26(a) liability limit and the
+    §24(d) refundable split, neither of which this microsim models. Comparing
+    against it made the phase-out slider look like engine disagreement."""
+    pe = _load_pe_script()
+    requested: list[str] = []
+
+    class FakeSeries:
+        def __init__(self, n: int) -> None:
+            self.values = np.zeros(n)
+            self.weights = np.ones(n)
+
+    class FakeSim:
+        def calculate(self, variable, period=None, map_to=None):  # noqa: ARG002
+            requested.append(variable)
+            if variable == "state_code_str":
+                return SimpleNamespace(values=np.array(["US"] * 4), weights=np.ones(4))
+            if variable == "in_poverty":
+                return SimpleNamespace(values=np.zeros(4, dtype=bool), weights=np.ones(4))
+            return FakeSeries(4)
+
+    result = pe._run_federal_ctc(FakeSim(), "US", 2026)
+
+    assert "ctc" in requested
+    assert "ctc_value" not in requested
+    assert result["pe_variable"].startswith("ctc")
+    assert "ctc_before_advance_payments" in result["axiom_output"]
+    assert server.MEASURES["federal-ctc"].pe_variable == "ctc"
+
+
 def _decile_bin(decile: int) -> dict:
     return {
         "decile": decile,

@@ -121,6 +121,7 @@ def _assert_app_v2_response_shape(data: dict, *, expect_reform: bool) -> None:
         "households_total_weighted",
         "baseline",
         "reform",
+        "measure",
     }
     assert data["program"] == "federal-income-tax"
     assert data["state"] == "US"
@@ -128,6 +129,13 @@ def _assert_app_v2_response_shape(data: dict, *, expect_reform: bool) -> None:
     assert data["n_households_sampled"] == 20
     assert data["n_persons_sampled"] == 20
     assert data["households_total_weighted"] == 20.0
+
+    # The headline label travels with the number it describes, so the UI
+    # can't caption one quantity with another's name (issue #11).
+    measure = data["measure"]
+    assert set(measure) == {"output_id", "label", "note", "pe_variable"}
+    assert measure["output_id"] == "us:statutes/26/1/j#income_tax_main_rates"
+    assert measure["label"] and measure["note"]
 
     baseline = data["baseline"]
     assert set(baseline) == {

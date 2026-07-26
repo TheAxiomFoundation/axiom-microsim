@@ -36,8 +36,9 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://axiom.org/microsim"),
-  title: "axiom-microsim — CO SNAP",
-  description: "PE-free microsimulation over Enhanced CPS using axiom-rules-engine",
+  title: "axiom-microsim",
+  description:
+    "Microsimulation over Enhanced CPS using axiom-rules-engine — CO SNAP, federal CTC, federal income tax",
   icons: {
     // basePath does not apply to metadata icon URLs — prefix explicitly.
     icon: [

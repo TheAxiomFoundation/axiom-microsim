@@ -24,11 +24,12 @@ export function Nav() {
               className="block h-auto w-full"
             />
           </a>
-          <Link href="/" className="border-l border-rule pl-3 no-underline" aria-label="Microsim">
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted">
-              Interactive
-            </div>
-            <div className="font-serif text-base leading-tight text-ink">Microsim</div>
+          <Link
+            href="/"
+            className="flex items-center self-stretch border-l border-rule pl-3 no-underline"
+            aria-label="Microsim"
+          >
+            <span className="font-serif text-base leading-tight text-ink">Microsim</span>
           </Link>
         </div>
 

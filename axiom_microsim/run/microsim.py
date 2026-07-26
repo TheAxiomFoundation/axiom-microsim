@@ -441,7 +441,9 @@ def _artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path
             scratch = _staged_rules_trees(include_co=True)
             try:
                 ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-                _compile(scratch / "rulespec-us-co" / CO_SNAP_PROGRAM_REL, CO_SNAP_BASELINE_ARTIFACT)
+                _compile(
+                    scratch / "rulespec-us-co" / CO_SNAP_PROGRAM_REL, CO_SNAP_BASELINE_ARTIFACT
+                )
             finally:
                 shutil.rmtree(scratch, ignore_errors=True)
         return CO_SNAP_BASELINE_ARTIFACT, None

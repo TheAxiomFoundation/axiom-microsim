@@ -511,10 +511,6 @@ export default function Page() {
           : ""}
         <code className="font-mono">enhanced_cps_2024.h5</code> ·{" "}
         <code className="font-mono">axiom-rules-engine</code> ·{" "}
-        <a href="/gallery/microsim/methodology" className="text-accent underline">
-          methodology
-        </a>{" "}
-        ·{" "}
         <a href="https://axiom-foundation.org" className="text-accent underline">
           axiom-foundation.org
         </a>

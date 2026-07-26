@@ -3,10 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const LINKS = [
-  { href: "/", label: "Microsim" },
-  { href: "/methodology", label: "Methodology" },
-];
+// /methodology stays routable but is intentionally unlisted here.
+const LINKS = [{ href: "/", label: "Microsim" }];
 
 export function Nav() {
   const pathname = usePathname();

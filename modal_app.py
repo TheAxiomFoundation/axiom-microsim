@@ -176,7 +176,9 @@ image = (
 @app.function(
     image=image,
     volumes={POPULACE_MOUNT: POPULACE_VOLUME},
-    timeout=600,
+    # Above Vercel's 800s compare cap so Modal is never the first to kill
+    # a PE run mid-flight (reform compares run two full sims).
+    timeout=900,
     memory=8192,
     # Modal's default CPU reservation ran reform microsims ~15x slower
     # than the local benchmark and pushed PE /compare past Vercel's cap.

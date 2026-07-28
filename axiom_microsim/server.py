@@ -358,7 +358,9 @@ def _compare_uncached(req: CompareRequest, cache_key: str) -> CompareResponse:
         ],
         capture_output=True,
         text=True,
-        timeout=600,
+        # Just under the 800s Vercel /api/compare cap; reform compares
+        # build two full PE sims and can pass 600s.
+        timeout=780,
     )
     elapsed = _time.time() - t0
     if proc.returncode != 0:

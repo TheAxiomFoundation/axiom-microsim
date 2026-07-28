@@ -17,7 +17,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pickle
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -93,9 +95,38 @@ def _build_sim(year: int, overrides: list[dict] | None):
     return sim
 
 
+# Baseline runs are deterministic in (program, state, year) against the
+# pinned dataset, so persist the raw arrays across subprocess invocations.
+# A reform request then builds only the reform sim — roughly halving it.
+# The cache dir is per-container scratch; the startup prewarm repopulates
+# it after a restart. Reusing identical arrays is loss-free.
+_CACHE_DIR = (
+    Path(os.environ.get("AXIOM_PE_CACHE_DIR", tempfile.gettempdir()))
+    / "axiom-pe-baseline-cache"
+)
+
+
+def _baseline_run_cached(program: str, state: str, year: int) -> dict:
+    path = _CACHE_DIR / f"{program}-{state}-{year}.pkl"
+    if path.exists():
+        try:
+            with path.open("rb") as f:
+                baseline = pickle.load(f)
+            sys.stderr.write(f"[PE] baseline cache hit: {path.name}\n")
+            return baseline
+        except Exception as exc:  # noqa: BLE001 — corrupt cache → recompute
+            sys.stderr.write(f"[PE] baseline cache unreadable ({exc}); recomputing\n")
+    baseline = _run_program(_build_sim(year, None), program, state, year)
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(f".{os.getpid()}.tmp")
+    with tmp.open("wb") as f:
+        pickle.dump(baseline, f)
+    os.replace(tmp, path)
+    return baseline
+
+
 def run(program: str, state: str, year: int, overrides: list[dict] | None) -> dict:
-    baseline_sim = _build_sim(year, None)
-    baseline = _run_program(baseline_sim, program, state, year)
+    baseline = _baseline_run_cached(program, state, year)
     reform = None
     if overrides:
         reform_sim = _build_sim(year, overrides)

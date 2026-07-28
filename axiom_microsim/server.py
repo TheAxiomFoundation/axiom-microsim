@@ -332,18 +332,8 @@ def compare(req: CompareRequest) -> CompareResponse:
     return response
 
 
-def _compare_uncached(req: CompareRequest, cache_key: str) -> CompareResponse:
-    if not _PE_PYTHON.exists():
-        raise HTTPException(
-            500,
-            f"PE Python interpreter not found at {_PE_PYTHON}. "
-            f"Set AXIOM_PE_PYTHON or install policyengine_us in a venv there.",
-        )
-    import time as _time
-
-    t0 = _time.time()
-    overrides_json = json.dumps([{"path": o.path, "value": o.value} for o in req.overrides])
-    proc = _subprocess.run(
+def _run_pe_subprocess(req: CompareRequest, overrides_json: str) -> _subprocess.CompletedProcess:
+    return _subprocess.run(
         [
             str(_PE_PYTHON),
             str(_PE_SCRIPT),
@@ -358,10 +348,32 @@ def _compare_uncached(req: CompareRequest, cache_key: str) -> CompareResponse:
         ],
         capture_output=True,
         text=True,
-        # Just under the 800s Vercel /api/compare cap; reform compares
-        # build two full PE sims and can pass 600s.
+        # Just under the 800s Vercel /api/compare cap; with the on-disk PE
+        # baseline cache a reform compare runs one sim, not two.
         timeout=780,
     )
+
+
+def _compare_uncached(req: CompareRequest, cache_key: str) -> CompareResponse:
+    if not _PE_PYTHON.exists():
+        raise HTTPException(
+            500,
+            f"PE Python interpreter not found at {_PE_PYTHON}. "
+            f"Set AXIOM_PE_PYTHON or install policyengine_us in a venv there.",
+        )
+    import time as _time
+
+    t0 = _time.time()
+    overrides_json = json.dumps([{"path": o.path, "value": o.value} for o in req.overrides])
+    try:
+        proc = _run_pe_subprocess(req, overrides_json)
+    except _subprocess.TimeoutExpired as exc:
+        raise HTTPException(
+            504,
+            f"PE compute exceeded {exc.timeout:.0f}s. Baseline results are "
+            f"precomputed at startup; reform comparisons may take several "
+            f"minutes on a cold container — retry shortly.",
+        ) from exc
     elapsed = _time.time() - t0
     if proc.returncode != 0:
         raise HTTPException(500, f"PE compute failed: {proc.stderr.strip()[:1000]}")

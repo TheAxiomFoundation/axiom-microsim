@@ -28,13 +28,16 @@ modal deploy modal_app.py
 Modal prints a public URL of the form:
 
 ```
-https://policyengine--axiom-microsim-web.modal.run
+MICROSIM_URL=<the URL modal deploy prints>
 ```
+
+> Modal dropped function-name URL suffixes (the old `-web` shape) in its 2026 URL scheme; literals rot when that happens. Trust the URL `modal deploy` prints over anything written here.
+
 
 Copy it. Verify:
 
 ```bash
-curl https://policyengine--axiom-microsim-web.modal.run/health
+curl "$MICROSIM_URL/health"
 # → {"status":"ok"}
 ```
 
@@ -65,7 +68,7 @@ modal volume put axiom-microsim-populace /tmp/pop/populace_us_2024.h5
 Smoke test the full path:
 
 ```bash
-curl -sS -X POST https://policyengine--axiom-microsim-web.modal.run/microsim \
+curl -sS -X POST "$MICROSIM_URL/microsim" \
   -H "Content-Type: application/json" \
   -d '{"program":"federal-ctc","state":"US","year":2026,"overrides":[]}' \
   | python3 -c "import json,sys; d=json.load(sys.stdin); print(f\"OK: \${d['baseline']['annual_cost']/1e9:.1f}B\")"

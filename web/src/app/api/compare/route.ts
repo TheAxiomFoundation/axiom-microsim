@@ -14,8 +14,8 @@ export async function POST(req: NextRequest) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body,
-    // PE compute is slow; let it run.
-    signal: AbortSignal.timeout(600_000),
+    // PE compute is slow; let it run right up to the 800s maxDuration.
+    signal: AbortSignal.timeout(790_000),
   });
   const text = await upstream.text();
   return new NextResponse(text, {

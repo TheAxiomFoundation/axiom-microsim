@@ -507,12 +507,12 @@ export default function Page() {
 
       <footer className="mt-8 border-t border-rule pt-4 text-xs text-ink-muted">
         {baseline.data
-          ? `ECPS sample: ${baseline.data.n_households_sampled.toLocaleString()} ${unitLabel} · ${baseline.data.n_persons_sampled.toLocaleString()} persons · `
+          ? `Populace sample: ${baseline.data.n_households_sampled.toLocaleString()} ${unitLabel} · ${baseline.data.n_persons_sampled.toLocaleString()} persons · `
           : ""}
-        <code className="font-mono">enhanced_cps_2024.h5</code> ·{" "}
+        <code className="font-mono">populace_us_2024.h5</code> ·{" "}
         <code className="font-mono">axiom-rules-engine</code> ·{" "}
-        <a href="https://axiom-foundation.org" className="text-accent underline">
-          axiom-foundation.org
+        <a href="https://axiom.org" className="text-accent underline">
+          axiom.org
         </a>
       </footer>
     </main>

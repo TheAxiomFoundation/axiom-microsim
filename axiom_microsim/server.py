@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess as _subprocess
+import threading as _threading
 from pathlib import Path as _Path
 from typing import Literal
 
@@ -290,19 +291,49 @@ class CompareResponse(BaseModel):
     elapsed_seconds: float
 
 
+# PE output is deterministic in (program, state, year, overrides), so
+# identical requests can reuse the last result instead of paying the
+# multi-minute recompute. Keyed on the exact request; no accuracy impact.
+# Single-flight: concurrent identical requests wait on the first compute
+# (matters during startup prewarm) instead of stacking PE subprocesses.
+_COMPARE_CACHE: dict[str, CompareResponse] = {}
+_COMPARE_CACHE_LOCK = _threading.Lock()
+_COMPARE_INFLIGHT: dict[str, _threading.Event] = {}
+
+
 @app.post("/compare", response_model=CompareResponse)
 def compare(req: CompareRequest) -> CompareResponse:
-    if not _PE_PYTHON.exists():
-        raise HTTPException(
-            500,
-            f"PE Python interpreter not found at {_PE_PYTHON}. "
-            f"Set AXIOM_PE_PYTHON or install policyengine_us in a venv there.",
-        )
-    import time as _time
+    cache_key = json.dumps(
+        {
+            "program": req.program,
+            "state": req.state,
+            "year": req.year,
+            "overrides": [{"path": o.path, "value": o.value} for o in req.overrides],
+        },
+        sort_keys=True,
+    )
+    while True:
+        with _COMPARE_CACHE_LOCK:
+            cached = _COMPARE_CACHE.get(cache_key)
+            if cached is not None:
+                return cached
+            event = _COMPARE_INFLIGHT.get(cache_key)
+            if event is None:
+                _COMPARE_INFLIGHT[cache_key] = _threading.Event()
+                break
+        event.wait(timeout=600)
+    try:
+        response = _compare_uncached(req, cache_key)
+    finally:
+        with _COMPARE_CACHE_LOCK:
+            event = _COMPARE_INFLIGHT.pop(cache_key, None)
+        if event is not None:
+            event.set()
+    return response
 
-    t0 = _time.time()
-    overrides_json = json.dumps([{"path": o.path, "value": o.value} for o in req.overrides])
-    proc = _subprocess.run(
+
+def _run_pe_subprocess(req: CompareRequest, overrides_json: str) -> _subprocess.CompletedProcess:
+    return _subprocess.run(
         [
             str(_PE_PYTHON),
             str(_PE_SCRIPT),
@@ -317,8 +348,32 @@ def compare(req: CompareRequest) -> CompareResponse:
         ],
         capture_output=True,
         text=True,
-        timeout=600,
+        # Just under the 800s Vercel /api/compare cap; with the on-disk PE
+        # baseline cache a reform compare runs one sim, not two.
+        timeout=780,
     )
+
+
+def _compare_uncached(req: CompareRequest, cache_key: str) -> CompareResponse:
+    if not _PE_PYTHON.exists():
+        raise HTTPException(
+            500,
+            f"PE Python interpreter not found at {_PE_PYTHON}. "
+            f"Set AXIOM_PE_PYTHON or install policyengine_us in a venv there.",
+        )
+    import time as _time
+
+    t0 = _time.time()
+    overrides_json = json.dumps([{"path": o.path, "value": o.value} for o in req.overrides])
+    try:
+        proc = _run_pe_subprocess(req, overrides_json)
+    except _subprocess.TimeoutExpired as exc:
+        raise HTTPException(
+            504,
+            f"PE compute exceeded {exc.timeout:.0f}s. Baseline results are "
+            f"precomputed at startup; reform comparisons may take several "
+            f"minutes on a cold container — retry shortly.",
+        ) from exc
     elapsed = _time.time() - t0
     if proc.returncode != 0:
         raise HTTPException(500, f"PE compute failed: {proc.stderr.strip()[:1000]}")
@@ -329,7 +384,7 @@ def compare(req: CompareRequest) -> CompareResponse:
     if "error" in data:
         raise HTTPException(500, f"PE compute error: {data['error']}")
 
-    return CompareResponse(
+    response = CompareResponse(
         program=req.program,
         state=req.state,
         year=req.year,
@@ -344,6 +399,28 @@ def compare(req: CompareRequest) -> CompareResponse:
         pe_poverty_impact=data.get("pe_poverty_impact"),
         elapsed_seconds=elapsed,
     )
+    with _COMPARE_CACHE_LOCK:
+        _COMPARE_CACHE[cache_key] = response
+    return response
+
+
+# Baseline engine runs are deterministic in (program, state, year) but were
+# recomputed inside every reform request — roughly half the reform latency.
+# Results are treated as read-only by the handlers, so reuse is loss-free.
+_BASELINE_RESULT_CACHE: dict[tuple, object] = {}
+_BASELINE_RESULT_LOCK = _threading.Lock()
+
+
+def _cached_baseline(program: str, state: str, year: int, compute):
+    key = (program, state, year)
+    with _BASELINE_RESULT_LOCK:
+        hit = _BASELINE_RESULT_CACHE.get(key)
+    if hit is not None:
+        return hit
+    result = compute()
+    with _BASELINE_RESULT_LOCK:
+        _BASELINE_RESULT_CACHE[key] = result
+    return result
 
 
 @app.post("/microsim", response_model=MicrosimResponse)
@@ -367,7 +444,9 @@ def _run_co_snap(req: MicrosimRequest, overrides: list[ParameterOverride]) -> Mi
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
-    baseline = run_co_snap(batch, period_year=req.year)
+    baseline = _cached_baseline(
+        "co-snap", req.state, req.year, lambda: run_co_snap(batch, period_year=req.year)
+    )
     cost = aggregate_cost(baseline)
     dist = by_household_income_decile(baseline, batch)
 
@@ -434,7 +513,12 @@ def _run_federal_income_tax(
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
-    baseline = run_federal_income_tax(batch, period_year=req.year)
+    baseline = _cached_baseline(
+        "federal-income-tax",
+        req.state,
+        req.year,
+        lambda: run_federal_income_tax(batch, period_year=req.year),
+    )
     base_tax = np.asarray(baseline.outputs[TAX_OUTPUT], dtype=np.float64)
     weight = baseline.household_weight
 
@@ -511,7 +595,9 @@ def _run_federal_ctc(req: MicrosimRequest, overrides: list[ParameterOverride]) -
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
-    baseline = run_federal_ctc(batch, period_year=req.year)
+    baseline = _cached_baseline(
+        "federal-ctc", req.state, req.year, lambda: run_federal_ctc(batch, period_year=req.year)
+    )
     base_credit = np.asarray(baseline.outputs[CTC_OUTPUT], dtype=np.float64)
     weight = baseline.household_weight
 
@@ -722,3 +808,38 @@ def _tax_deciles(tax: np.ndarray, weight: np.ndarray) -> list[DecileBinOut]:
             )
         )
     return bins
+
+
+# --- Startup prewarm ---------------------------------------------------------
+# The three default panels always request the same baselines. Computing them
+# once at container start (opt-in via AXIOM_PREWARM=1; Modal sets it) turns
+# the first user click — including the multi-minute PE /compare baseline —
+# into a cache hit. Same computation, same results, just done early.
+
+_PREWARM_TARGETS = [
+    ("federal-ctc", "US"),
+    ("federal-income-tax", "US"),
+    ("co-snap", "CO"),
+]
+_PREWARM_YEAR = 2026
+
+
+def _prewarm() -> None:
+    for program, state in _PREWARM_TARGETS:
+        try:
+            microsim(MicrosimRequest(program=program, state=state, year=_PREWARM_YEAR))
+        except Exception as exc:  # noqa: BLE001 — prewarm must never kill the app
+            print(f"[prewarm] microsim {program}/{state} failed: {exc}", flush=True)
+    for program, state in _PREWARM_TARGETS:
+        try:
+            compare(CompareRequest(program=program, state=state, year=_PREWARM_YEAR))
+            print(f"[prewarm] PE baseline ready: {program}/{state}", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[prewarm] compare {program}/{state} failed: {exc}", flush=True)
+
+
+@app.on_event("startup")
+def _start_prewarm() -> None:
+    if os.environ.get("AXIOM_PREWARM") != "1":
+        return
+    _threading.Thread(target=_prewarm, name="prewarm", daemon=True).start()

@@ -166,6 +166,9 @@ image = (
         # Modal that's the SAME interpreter the FastAPI app runs in.
         "AXIOM_PE_PYTHON": "/usr/local/bin/python",
         "AXIOM_PE_SCRIPT": "/opt/axiom-microsim/scripts/compute_pe_one.py",
+        # Precompute the three default baselines (incl. the slow PE ones)
+        # when a container starts, so first clicks hit the caches.
+        "AXIOM_PREWARM": "1",
     })
 )
 
@@ -173,12 +176,20 @@ image = (
 @app.function(
     image=image,
     volumes={POPULACE_MOUNT: POPULACE_VOLUME},
-    timeout=600,
+    # Above Vercel's 800s compare cap so Modal is never the first to kill
+    # a PE run mid-flight (reform compares run two full sims).
+    timeout=900,
     memory=8192,
+    # Modal's default CPU reservation ran reform microsims ~15x slower
+    # than the local benchmark and pushed PE /compare past Vercel's cap.
+    cpu=8.0,
     # PE microsim warmup is heavy; keep one container hot to avoid
     # paying the cold start on every reform run.
     min_containers=1,
 )
+# Without this, one multi-minute PE /compare holds the container's single
+# input slot and every /microsim slider run queues behind it into a 504.
+@modal.concurrent(max_inputs=4)
 @modal.asgi_app()
 def web():
     from axiom_microsim.server import app as fastapi_app

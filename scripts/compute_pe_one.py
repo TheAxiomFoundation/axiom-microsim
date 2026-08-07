@@ -137,8 +137,15 @@ def _run_federal_income_tax(sim, state: str, year: int) -> dict:
 
 
 def _run_federal_ctc(sim, state: str, year: int) -> dict:
+    # `ctc`, not `ctc_value`: it is the measure Axiom computes — maximum
+    # credit less the income phase-out — where `ctc_value` additionally
+    # applies the §26(a) liability limit and the §24(d) refundable split
+    # (`min(ctc, limiting_tax + refundable_ctc)`), which this microsim does
+    # not model. Comparing against `ctc_value` compared two different
+    # quantities and made the phase-out slider look like engine disagreement
+    # (issue #11).
     t0 = time.time()
-    ctc, weights = _series(sim, "ctc_value", year)
+    ctc, weights = _series(sim, "ctc", year)
     agi, _ = _series(sim, "adjusted_gross_income", year)
     mask = _state_mask(sim, state, year, "tax_unit", len(ctc))
     ctc = ctc[mask]
@@ -148,8 +155,8 @@ def _run_federal_ctc(sim, state: str, year: int) -> dict:
 
     return {
         "scope": state,
-        "axiom_output": "ctc_maximum_before_phase_out_under_subsection_h",
-        "pe_variable": "ctc_value (post phase-out)",
+        "axiom_output": "ctc_before_advance_payments (§24, post phase-out)",
+        "pe_variable": "ctc (post phase-out)",
         "values": ctc,
         "weights": weights,
         "axis": agi,

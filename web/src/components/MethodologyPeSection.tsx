@@ -37,10 +37,10 @@ const SCOPES: ScopeSpec[] = [
     id: "federal-ctc",
     label: "Federal CTC · nationwide",
     state: "US",
-    axiomLabel: "ctc_maximum_before_phase_out_under_subsection_h",
-    peLabel: "ctc_value (post phase-out)",
+    axiomLabel: "ctc_before_advance_payments (§24)",
+    peLabel: "ctc",
     axiomNote:
-      "Axiom shows max BEFORE phase-out (no AGI-based reduction yet); PE shows the actual credit allowed (post phase-out, post refundable cap).",
+      "Both compute the §24 credit after the income phase-out and before the §26(a) tax-liability limit — PE's ctc_value would additionally apply that limit and the §24(d) refundable split, which this microsim doesn't model. Differences come from the filing-status heuristic and our v1 AGI proxy.",
   },
   {
     id: "federal-income-tax",

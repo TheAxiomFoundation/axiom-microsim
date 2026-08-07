@@ -4,9 +4,14 @@ Same handler runs locally under ``uvicorn`` and inside Modal — see
 ``modal_app.py``. The Next.js frontend reads ``AXIOM_MICROSIM_URL`` and
 posts here.
 
-Two programs supported:
+Three programs supported:
   - ``co-snap``: Colorado SNAP (household-rooted, monthly).
   - ``federal-income-tax``: §1(j) ordinary brackets (TaxUnit-rooted, annual).
+  - ``federal-ctc``: §24 Child Tax Credit after the §24(b)(1) phase-out
+    (TaxUnit-rooted, annual).
+
+Every response carries a ``measure`` block naming the engine output behind
+the headline number — see :class:`MeasureOut` and :data:`MEASURES`.
 """
 
 from __future__ import annotations
@@ -28,9 +33,13 @@ from .aggregate.reform import compare as compare_reform
 from .data.ecps_loader import (
     load_state,
     load_state_tax_units,
-    sum_person_to_tax_unit,
+    tax_unit_agi,
 )
 from .run.microsim import (
+    DEFAULT_OUTPUT_IDS,
+    FED_CTC_HEADLINE_OUTPUT,
+    FED_CTC_OUTPUT_IDS,
+    FED_INCOME_TAX_OUTPUT_IDS,
     ParameterOverride,
     run_co_snap,
     run_federal_ctc,
@@ -112,6 +121,21 @@ class ReformOut(BaseModel):
     decile_impact: list[DecileImpactBin] = Field(default_factory=list)
 
 
+class MeasureOut(BaseModel):
+    """What the headline number actually is.
+
+    Served by the same code that picks the engine output, so the label
+    can't drift from the quantity (issue #11: the UI called a pre-phase-out
+    maximum "Annual CTC cost" for the whole of v1). Clients display
+    ``label`` verbatim; ``output_id`` is the RuleSpec rule that produced it.
+    """
+
+    output_id: str
+    label: str  # headline stat label, e.g. "Annual CTC after phase-out"
+    note: str  # what the measure includes and excludes, one sentence
+    pe_variable: str | None = None  # like-for-like PolicyEngine variable
+
+
 class MicrosimResponse(BaseModel):
     program: str
     state: str
@@ -121,6 +145,7 @@ class MicrosimResponse(BaseModel):
     households_total_weighted: float
     baseline: BaselineOut
     reform: ReformOut | None = None
+    measure: MeasureOut | None = None
 
 
 # --- App --------------------------------------------------------------------
@@ -361,6 +386,49 @@ def microsim(req: MicrosimRequest) -> MicrosimResponse:
 # --- co-snap path -----------------------------------------------------------
 
 
+# --- What each program's headline number is ---------------------------------
+#
+# One registry, keyed by the same program ids the request takes. The engine
+# output id, the label the UI prints, and the PolicyEngine variable /compare
+# runs are declared together so a change to one is a change to all three.
+
+SNAP_OUTPUT = "snap_allotment"
+TAX_OUTPUT = "income_tax_main_rates"
+CTC_OUTPUT = FED_CTC_HEADLINE_OUTPUT
+
+MEASURES: dict[str, MeasureOut] = {
+    "co-snap": MeasureOut(
+        output_id=DEFAULT_OUTPUT_IDS[SNAP_OUTPUT],
+        label="Annual cost",
+        note=(
+            "Colorado SNAP allotment for a representative month, annualised (× 12) "
+            "and weighted to the state population."
+        ),
+        pe_variable="snap (monthly × 12)",
+    ),
+    "federal-income-tax": MeasureOut(
+        output_id=FED_INCOME_TAX_OUTPUT_IDS[TAX_OUTPUT],
+        label="Annual revenue",
+        note=(
+            "Tax under the §1(j) ordinary-rate brackets. Not total income tax — "
+            "no credits, no AMT, no payroll tax."
+        ),
+        pe_variable="income_tax_main_rates",
+    ),
+    "federal-ctc": MeasureOut(
+        output_id=FED_CTC_OUTPUT_IDS[CTC_OUTPUT],
+        label="Annual CTC after phase-out",
+        note=(
+            "§24 credit after the §24(b)(1) income phase-out, using the §24(h) "
+            "post-2017 amounts and thresholds. Before the §26(a) tax-liability "
+            "limitation and the §24(d) refundable split, so it is what filers are "
+            "entitled to claim rather than the budgetary outlay."
+        ),
+        pe_variable="ctc",
+    ),
+}
+
+
 def _run_co_snap(req: MicrosimRequest, overrides: list[ParameterOverride]) -> MicrosimResponse:
     try:
         batch = load_state(req.state)
@@ -385,6 +453,7 @@ def _run_co_snap(req: MicrosimRequest, overrides: list[ParameterOverride]) -> Mi
             average_monthly_benefit=cost.average_monthly_benefit,
             decile_distribution=[DecileBinOut(**b.__dict__) for b in dist.bins],
         ),
+        measure=MEASURES["co-snap"],
     )
 
     if overrides:
@@ -422,10 +491,8 @@ def _run_co_snap(req: MicrosimRequest, overrides: list[ParameterOverride]) -> Mi
 
 # --- federal-income-tax path ------------------------------------------------
 
+
 # Headline output for §1(j). Annual; we don't divide by 12.
-TAX_OUTPUT = "income_tax_main_rates"
-
-
 def _run_federal_income_tax(
     req: MicrosimRequest, overrides: list[ParameterOverride]
 ) -> MicrosimResponse:
@@ -447,7 +514,7 @@ def _run_federal_income_tax(
         else 0.0
     )
 
-    deciles = _decile_by_axis(base_tax, weight, _tax_unit_agi(batch))
+    deciles = _decile_by_axis(base_tax, weight, tax_unit_agi(batch))
 
     response = MicrosimResponse(
         program=baseline.program,
@@ -463,6 +530,7 @@ def _run_federal_income_tax(
             average_monthly_benefit=avg_per_filer,  # mean ANNUAL liability per filer
             decile_distribution=deciles,
         ),
+        measure=MEASURES["federal-income-tax"],
     )
 
     if overrides:
@@ -485,7 +553,7 @@ def _run_federal_income_tax(
         # but they're winners. Negate so mean_delta is the "received less
         # tax" magnitude when negative; the chart can color positive/
         # negative however it likes.
-        decile_bins = _decile_impact(delta, weight, _tax_unit_agi(batch))
+        decile_bins = _decile_impact(delta, weight, tax_unit_agi(batch))
         response.reform = ReformOut(
             baseline_annual_cost=annual_revenue,
             reform_annual_cost=ref_revenue,
@@ -500,9 +568,6 @@ def _run_federal_income_tax(
         )
 
     return response
-
-
-CTC_OUTPUT = "ctc_maximum_before_phase_out_under_subsection_h"
 
 
 def _run_federal_ctc(req: MicrosimRequest, overrides: list[ParameterOverride]) -> MicrosimResponse:
@@ -524,7 +589,7 @@ def _run_federal_ctc(req: MicrosimRequest, overrides: list[ParameterOverride]) -
         else 0.0
     )
 
-    deciles = _decile_by_axis(base_credit, weight, _tax_unit_agi(batch))
+    deciles = _decile_by_axis(base_credit, weight, tax_unit_agi(batch))
 
     response = MicrosimResponse(
         program=baseline.program,
@@ -540,6 +605,7 @@ def _run_federal_ctc(req: MicrosimRequest, overrides: list[ParameterOverride]) -
             average_monthly_benefit=avg,
             decile_distribution=deciles,
         ),
+        measure=MEASURES["federal-ctc"],
     )
 
     if overrides:
@@ -557,7 +623,7 @@ def _run_federal_ctc(req: MicrosimRequest, overrides: list[ParameterOverride]) -
         avg_gain = float((delta[gainers] * weight[gainers]).sum() / win_w) if win_w else 0.0
         avg_loss = float((-delta[losers] * weight[losers]).sum() / lose_w) if lose_w else 0.0
 
-        decile_bins = _decile_impact(delta, weight, _tax_unit_agi(batch))
+        decile_bins = _decile_impact(delta, weight, tax_unit_agi(batch))
         response.reform = ReformOut(
             baseline_annual_cost=annual_cost,
             reform_annual_cost=ref_cost,
@@ -572,20 +638,6 @@ def _run_federal_ctc(req: MicrosimRequest, overrides: list[ParameterOverride]) -
         )
 
     return response
-
-
-AGI_INCOME_COLUMNS: tuple[str, ...] = (
-    "employment_income_before_lsr",
-    "self_employment_income_before_lsr",
-    "taxable_interest_income",
-    "qualified_dividend_income",
-    "non_qualified_dividend_income",
-    "taxable_pension_income",
-    "rental_income",
-    "alimony_income",
-    "tip_income",
-    "miscellaneous_income",
-)
 
 
 NOISE_FLOOR = 1.0  # per-unit changes smaller than this are treated as 0
@@ -631,17 +683,6 @@ def _decile_impact(
             )
         )
     return bins
-
-
-def _tax_unit_agi(batch) -> np.ndarray:
-    """Sum ECPS person-level income components to a per-tax-unit AGI proxy."""
-    agi = np.zeros(batch.n_tax_units, dtype=np.float64)
-    for col in AGI_INCOME_COLUMNS:
-        if col in batch.person_columns:
-            agi += sum_person_to_tax_unit(
-                batch.person_columns[col], batch.person_tax_unit_index, batch.n_tax_units
-            )
-    return agi
 
 
 def _decile_by_axis(

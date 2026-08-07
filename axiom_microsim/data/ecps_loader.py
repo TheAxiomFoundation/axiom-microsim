@@ -451,6 +451,39 @@ def count_persons_per_tax_unit(person_tax_unit_index: np.ndarray) -> np.ndarray:
     return np.bincount(person_tax_unit_index)
 
 
+# Person-level income columns summed into the per-tax-unit AGI proxy. Not
+# true AGI — no above-the-line deductions, no exclusions — so it runs a
+# little high. Documented as a v1 gap in `web/src/lib/methodology.ts`.
+AGI_INCOME_COLUMNS: tuple[str, ...] = (
+    "employment_income_before_lsr",
+    "self_employment_income_before_lsr",
+    "taxable_interest_income",
+    "qualified_dividend_income",
+    "non_qualified_dividend_income",
+    "taxable_pension_income",
+    "rental_income",
+    "alimony_income",
+    "tip_income",
+    "miscellaneous_income",
+)
+
+
+def tax_unit_agi(batch) -> np.ndarray:
+    """Sum ECPS person-level income components to a per-tax-unit AGI proxy.
+
+    One definition, two consumers: the decile axis in ``server`` and the
+    §24(b)(1) modified-AGI input in ``project.federal_ctc``. Keep it that
+    way — a second AGI would let the phase-out and the chart disagree.
+    """
+    agi = np.zeros(batch.n_tax_units, dtype=np.float64)
+    for col in AGI_INCOME_COLUMNS:
+        if col in batch.person_columns:
+            agi += sum_person_to_tax_unit(
+                batch.person_columns[col], batch.person_tax_unit_index, batch.n_tax_units
+            )
+    return agi
+
+
 def _read(f: h5py.File, var: str, year: str) -> np.ndarray:
     if var not in f:
         raise KeyError(f"variable {var!r} not in ECPS file")

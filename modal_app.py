@@ -84,7 +84,11 @@ _compile_cmds = [
 
 
 image = (
-    modal.Image.debian_slim(python_version="3.13")
+    # Must match `requires-python` in pyproject.toml. CI tests only that
+    # version, so a mismatch here means CI-green code can fail at import on
+    # Modal (e.g. PEP 758 parenless `except` parses on 3.14, SyntaxErrors on
+    # 3.13). The check-runtime-consistency CI job enforces this equality.
+    modal.Image.debian_slim(python_version="3.14")
     .apt_install(
         "git", "curl", "build-essential", "pkg-config", "libssl-dev", "ca-certificates",
     )

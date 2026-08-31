@@ -15,18 +15,21 @@ import json
 import os
 import subprocess as _subprocess
 import threading as _threading
+import time as _time
+from collections import OrderedDict
 from pathlib import Path as _Path
-from typing import Literal
+from typing import Annotated, Literal
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 
 from .aggregate.cost import aggregate as aggregate_cost
 from .aggregate.distribution import by_household_income_decile
 from .aggregate.reform import compare as compare_reform
 from .data.ecps_loader import (
+    STATE_FIPS,
     load_state,
     load_state_tax_units,
     sum_person_to_tax_unit,
@@ -37,6 +40,33 @@ from .run.microsim import (
     run_federal_ctc,
     run_federal_income_tax,
 )
+
+
+# --- State scope validation --------------------------------------------------
+# Every endpoint takes a `state` scope. That value is not just a filter: it
+# reaches a PE subprocess argv and, in ``scripts/compute_pe_one.py``, a
+# filesystem cache path that is ``pickle.load``-ed. Free-form text there
+# would let a caller escape the cache dir (``../``) and choose the pickle
+# the server unpickles — remote code execution on a public, CORS-``*``
+# endpoint. So the scope is an allowlist, never a string.
+#
+# ``US`` is nationwide; everything else must be one of the 50 states + DC
+# (``STATE_FIPS`` is the loader's own hand-encoded Census FIPS table).
+
+VALID_STATE_SCOPES = frozenset({"US", *STATE_FIPS})
+
+
+def _validate_state_scope(value: str) -> str:
+    """Normalise and allowlist a state scope; raise so Pydantic returns 422."""
+    scope = value.strip().upper()
+    if scope not in VALID_STATE_SCOPES:
+        raise ValueError(
+            f"unknown state scope {value!r}; expected 'US' or a 2-letter state/DC code"
+        )
+    return scope
+
+
+StateScope = Annotated[str, AfterValidator(_validate_state_scope)]
 
 
 # --- Request / response models ----------------------------------------------
@@ -65,7 +95,7 @@ class OverrideIn(BaseModel):
 
 class MicrosimRequest(BaseModel):
     program: Literal["co-snap", "federal-income-tax", "federal-ctc"] = "co-snap"
-    state: str = "CO"
+    state: StateScope = "CO"
     year: int = 2026
     overrides: list[OverrideIn] = Field(default_factory=list)
 
@@ -169,7 +199,7 @@ class EcpsStatsResponse(BaseModel):
 @app.get("/ecps-stats", response_model=EcpsStatsResponse)
 def ecps_stats(
     program: Literal["co-snap", "federal-income-tax", "federal-ctc"],
-    state: str = "US",
+    state: StateScope = "US",
 ) -> EcpsStatsResponse:
     if program == "co-snap":
         from .data.ecps_loader import load_state as _load
@@ -256,7 +286,7 @@ class PeOverrideIn(BaseModel):
 
 class CompareRequest(BaseModel):
     program: Literal["co-snap", "federal-income-tax", "federal-ctc"]
-    state: str = "US"
+    state: StateScope = "US"
     year: int = 2026
     overrides: list[PeOverrideIn] = Field(default_factory=list)
 
@@ -291,18 +321,44 @@ class CompareResponse(BaseModel):
     elapsed_seconds: float
 
 
+# Both in-process caches live for the life of a Modal container, which can
+# serve requests for hours. A plain dict would grow with every distinct
+# (program, state, year, overrides) tuple a caller invents — each compare
+# entry holds two full decile breakdowns — so both are bounded LRUs. The
+# working set is tiny (three prewarmed baselines plus whatever sliders the
+# UI is showing), so eviction only ever discards genuinely cold entries.
+_CACHE_MAX_ENTRIES = 64
+
+
+def _lru_get(cache: OrderedDict, key):
+    """Read ``key`` and mark it most-recently-used. Caller holds the lock."""
+    if key not in cache:
+        return None
+    cache.move_to_end(key)
+    return cache[key]
+
+
+def _lru_put(cache: OrderedDict, key, value) -> None:
+    """Store ``key`` and evict past the cap. Caller holds the lock."""
+    cache[key] = value
+    cache.move_to_end(key)
+    while len(cache) > _CACHE_MAX_ENTRIES:
+        cache.popitem(last=False)
+
+
 # PE output is deterministic in (program, state, year, overrides), so
 # identical requests can reuse the last result instead of paying the
 # multi-minute recompute. Keyed on the exact request; no accuracy impact.
 # Single-flight: concurrent identical requests wait on the first compute
 # (matters during startup prewarm) instead of stacking PE subprocesses.
-_COMPARE_CACHE: dict[str, CompareResponse] = {}
+_COMPARE_CACHE: OrderedDict[str, CompareResponse] = OrderedDict()
 _COMPARE_CACHE_LOCK = _threading.Lock()
 _COMPARE_INFLIGHT: dict[str, _threading.Event] = {}
 
 
 @app.post("/compare", response_model=CompareResponse)
 def compare(req: CompareRequest) -> CompareResponse:
+    t0 = _time.time()
     cache_key = json.dumps(
         {
             "program": req.program,
@@ -314,9 +370,13 @@ def compare(req: CompareRequest) -> CompareResponse:
     )
     while True:
         with _COMPARE_CACHE_LOCK:
-            cached = _COMPARE_CACHE.get(cache_key)
+            cached = _lru_get(_COMPARE_CACHE, cache_key)
             if cached is not None:
-                return cached
+                # `elapsed_seconds` is what THIS caller waited, not what the
+                # original compute cost. The UI prints it as "PE took N s";
+                # replaying the cold number would misreport a cache hit (and
+                # a single-flight waiter's real wait) as a fresh PE run.
+                return cached.model_copy(update={"elapsed_seconds": _time.time() - t0})
             event = _COMPARE_INFLIGHT.get(cache_key)
             if event is None:
                 _COMPARE_INFLIGHT[cache_key] = _threading.Event()
@@ -361,8 +421,6 @@ def _compare_uncached(req: CompareRequest, cache_key: str) -> CompareResponse:
             f"PE Python interpreter not found at {_PE_PYTHON}. "
             f"Set AXIOM_PE_PYTHON or install policyengine_us in a venv there.",
         )
-    import time as _time
-
     t0 = _time.time()
     overrides_json = json.dumps([{"path": o.path, "value": o.value} for o in req.overrides])
     try:
@@ -400,26 +458,26 @@ def _compare_uncached(req: CompareRequest, cache_key: str) -> CompareResponse:
         elapsed_seconds=elapsed,
     )
     with _COMPARE_CACHE_LOCK:
-        _COMPARE_CACHE[cache_key] = response
+        _lru_put(_COMPARE_CACHE, cache_key, response)
     return response
 
 
 # Baseline engine runs are deterministic in (program, state, year) but were
 # recomputed inside every reform request — roughly half the reform latency.
 # Results are treated as read-only by the handlers, so reuse is loss-free.
-_BASELINE_RESULT_CACHE: dict[tuple, object] = {}
+_BASELINE_RESULT_CACHE: OrderedDict[tuple, object] = OrderedDict()
 _BASELINE_RESULT_LOCK = _threading.Lock()
 
 
 def _cached_baseline(program: str, state: str, year: int, compute):
     key = (program, state, year)
     with _BASELINE_RESULT_LOCK:
-        hit = _BASELINE_RESULT_CACHE.get(key)
+        hit = _lru_get(_BASELINE_RESULT_CACHE, key)
     if hit is not None:
         return hit
     result = compute()
     with _BASELINE_RESULT_LOCK:
-        _BASELINE_RESULT_CACHE[key] = result
+        _lru_put(_BASELINE_RESULT_CACHE, key, result)
     return result
 
 

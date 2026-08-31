@@ -1,8 +1,9 @@
 """Compute one PolicyEngine aggregate for the /compare endpoint.
 
 Runs in the policyengine.py venv (where ``policyengine_us`` is installed).
-The FastAPI server subprocesses into this script per request — no
-caching, every call recomputes.
+The FastAPI server subprocesses into this script per request. Baseline
+runs are memoised on disk (see ``_baseline_run_cached``); reform sims are
+always recomputed.
 
 Wire shape::
 
@@ -18,6 +19,7 @@ import argparse
 import json
 import os
 import pickle
+import re
 import sys
 import tempfile
 import time
@@ -105,9 +107,28 @@ _CACHE_DIR = (
     / "axiom-pe-baseline-cache"
 )
 
+# `program` and `state` are interpolated into the cache filename below and
+# the file is `pickle.load`-ed, so a value carrying `/` or `..` would both
+# escape the cache dir and choose which pickle we deserialise. The FastAPI
+# layer already allowlists both (axiom_microsim/server.py), but this script
+# is also runnable standalone, so it refuses anything off-shape itself
+# rather than trusting its caller.
+_SAFE_STATE = re.compile(r"\A(?:US|[A-Z]{2})\Z")
+_KNOWN_PROGRAMS = frozenset({"federal-income-tax", "federal-ctc", "co-snap"})
+
+
+def _cache_path(program: str, state: str, year: int) -> Path:
+    if not _SAFE_STATE.match(state or ""):
+        raise ValueError(
+            f"invalid state scope {state!r}; expected 'US' or a 2-letter state code"
+        )
+    if program not in _KNOWN_PROGRAMS:
+        raise ValueError(f"unknown program {program!r}")
+    return _CACHE_DIR / f"{program}-{state}-{int(year)}.pkl"
+
 
 def _baseline_run_cached(program: str, state: str, year: int) -> dict:
-    path = _CACHE_DIR / f"{program}-{state}-{year}.pkl"
+    path = _cache_path(program, state, year)
     if path.exists():
         try:
             with path.open("rb") as f:

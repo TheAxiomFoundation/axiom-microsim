@@ -66,3 +66,6 @@ Nothing outstanding — push and report.
   a hook in this environment, so its own `ci` install could not be run directly.
 - There is no JS test runner in this repo, so Finding 3 is covered by the
   manual end-to-end run above rather than by an automated test.
+- Next bundles `undici` straight into `.next/server/app/api/compare/route.js`
+  (the compiled route contains `UND_ERR_HEADERS_TIMEOUT`), so it needs no
+  output-file-tracing entry and no `serverExternalPackages` change.

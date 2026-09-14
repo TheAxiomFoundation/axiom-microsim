@@ -183,9 +183,12 @@ image = (
     # Modal's default CPU reservation ran reform microsims ~15x slower
     # than the local benchmark and pushed PE /compare past Vercel's cap.
     cpu=8.0,
-    # PE microsim warmup is heavy; keep one container hot to avoid
-    # paying the cold start on every reform run.
-    min_containers=1,
+    # Scale to zero when idle: an always-warm 8-core container cost ~$320/mo
+    # doing nothing. Containers spin up on the first request and stay hot
+    # for 15 minutes after the last one, so a demo session pays one cold
+    # start, not one per click.
+    min_containers=0,
+    scaledown_window=900,
 )
 # Without this, one multi-minute PE /compare holds the container's single
 # input slot and every /microsim slider run queues behind it into a 504.

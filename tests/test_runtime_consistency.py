@@ -55,3 +55,26 @@ def test_declared_tested_and_deployed_python_agree() -> None:
         "import on Modal (e.g. PEP 758 parenless `except` on 3.14 vs 3.13). "
         "Align all three."
     )
+
+
+def test_modal_image_enforces_requires_python() -> None:
+    # `pip install --ignore-requires-python` is how a 3.13 image installed a
+    # `==3.14.*` package without complaint. Without the flag, the image build
+    # itself rejects a Python that breaks the contract.
+    text = (ROOT / "modal_app.py").read_text()
+    assert "--ignore-requires-python" not in text, (
+        "modal_app.py bypasses requires-python inside the image; drop "
+        "--ignore-requires-python so a wrong image Python fails at build time."
+    )
+
+
+def test_readme_setup_names_the_contract_python() -> None:
+    contract = _requires_python_minor()
+    text = (ROOT / "README.md").read_text()
+    named = re.findall(r"(?:python@|--python\s+)(\d+\.\d+)", text)
+    assert named, "README.md no longer names a Python version for local setup"
+    stale = sorted(set(named) - {contract})
+    assert not stale, (
+        f"README.md setup names Python {', '.join(stale)}, but requires-python "
+        f"pins {contract}. Update the brew / `uv venv --python` lines."
+    )

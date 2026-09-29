@@ -37,19 +37,34 @@ from ..project.federal_income_tax import (
 
 # --- Bounded LRU for request-bytes caches -----------------------------------
 #
-# Each cache entry is the encoded engine input — up to ~141 MB for CTC US,
-# ~41 MB for CO SNAP CO. Without a cap, hitting every state for every
-# program would pile ~7 GB of cached bytes into the Modal container's
-# 8 GB. Bound at REQUEST_CACHE_MAX_ENTRIES (worst case ~1.1 GB).
+# Each cache entry is one encoded engine request — ~25 MB per CTC chunk
+# (~450 MB for all of nationwide CTC), ~41 MB for CO SNAP CO. Counting
+# entries alone doesn't bound anything useful when entries differ by 20×,
+# so the cache carries a byte budget too: hitting every state for every
+# program can't grow past REQUEST_CACHE_MAX_BYTES per cache of the Modal
+# container's 8 GB, whatever mix of programs got there first. The entry cap
+# is generous because a nationwide CTC run alone is ~18 chunk entries.
 
-REQUEST_CACHE_MAX_ENTRIES = 8
+REQUEST_CACHE_MAX_ENTRIES = 64
+REQUEST_CACHE_MAX_BYTES = 750_000_000
 
 
 class _BoundedRequestCache:
-    """Tiny LRU keyed by tuple → bytes. Move-to-end on get and put."""
+    """Tiny LRU keyed by tuple → bytes, bounded by count *and* bytes.
 
-    def __init__(self, max_entries: int = REQUEST_CACHE_MAX_ENTRIES) -> None:
+    A single entry over the byte budget is kept (it is already resident;
+    evicting it would only force a rebuild of the same bytes), but it
+    evicts everything else.
+    """
+
+    def __init__(
+        self,
+        max_entries: int = REQUEST_CACHE_MAX_ENTRIES,
+        max_bytes: int = REQUEST_CACHE_MAX_BYTES,
+    ) -> None:
         self._max = max_entries
+        self._max_bytes = max_bytes
+        self._bytes = 0
         self._d: OrderedDict[tuple, bytes] = OrderedDict()
 
     def get(self, key: tuple) -> bytes | None:
@@ -67,14 +82,22 @@ class _BoundedRequestCache:
         return v
 
     def __setitem__(self, key: tuple, value: bytes) -> None:
-        if key in self._d:
+        existing = self._d.get(key)
+        if existing is not None:
+            self._bytes -= len(existing)
             self._d.move_to_end(key)
         self._d[key] = value
-        while len(self._d) > self._max:
-            self._d.popitem(last=False)
+        self._bytes += len(value)
+        while len(self._d) > 1 and (len(self._d) > self._max or self._bytes > self._max_bytes):
+            _, evicted = self._d.popitem(last=False)
+            self._bytes -= len(evicted)
 
     def __len__(self) -> int:
         return len(self._d)
+
+    @property
+    def nbytes(self) -> int:
+        return self._bytes
 
 
 # --- Locations ---------------------------------------------------------------
@@ -106,18 +129,36 @@ CO_SNAP_BASE_SCHEMA = ARTIFACTS_DIR / "co-snap-base.json"
 # the natural module IDs.
 FED_INCOME_TAX_PROGRAM_REL = "statutes/26/1/j.yaml"
 
-# §24(h) Child Tax Credit — TaxUnit-rooted, year period.
-FED_CTC_PROGRAM_REL = "statutes/26/24/h.yaml"
-FED_CTC_RELATION_NAME = "us:statutes/26/24/h#relation.dependent_of_tax_unit"
+# §24 Child Tax Credit — TaxUnit-rooted, year period.
+#
+# The program is the *parent* §24 module, which imports §24(h)'s post-2017
+# amounts and thresholds and applies the §24(b)(1) phase-out to them. Running
+# h.yaml alone would stop at the maximum before phase-out — the measure that
+# ignores the phase-out threshold lever entirely (issue #11).
+FED_CTC_PROGRAM_REL = "statutes/26/24.yaml"
+FED_CTC_RELATION_NAMES: tuple[str, ...] = (
+    "us:statutes/26/24/h#relation.dependent_of_tax_unit",
+    "us:statutes/26/24#relation.ctc_qualifying_child_of_tax_unit",
+)
 
 FED_CTC_OUTPUT_IDS: dict[str, str] = {
-    "ctc_maximum_before_phase_out_under_subsection_h": "us:statutes/26/24/h#ctc_maximum_before_phase_out_under_subsection_h",
+    # The headline measure: §24 credit after the §24(b)(1) income phase-out,
+    # before the §26(a) liability limitation and the §24(d) refundable split.
+    "ctc_before_advance_payments": "us:statutes/26/24#ctc_before_advance_payments",
+    "ctc_maximum_before_phaseout": "us:statutes/26/24#ctc_maximum_before_phaseout",
+    "ctc_phaseout_amount": "us:statutes/26/24#ctc_phaseout_amount",
+    "ctc_phaseout_threshold": "us:statutes/26/24#ctc_phaseout_threshold",
     "ctc_qualifying_children_under_subsection_h": "us:statutes/26/24/h#ctc_qualifying_children_under_subsection_h",
     "ctc_other_dependents_under_subsection_h": "us:statutes/26/24/h#ctc_other_dependents_under_subsection_h",
-    "ctc_phase_out_threshold_under_subsection_h": "us:statutes/26/24/h#ctc_phase_out_threshold_under_subsection_h",
     "ctc_refundable_maximum_under_subsection_h": "us:statutes/26/24/h#ctc_refundable_maximum_under_subsection_h",
 }
 FED_CTC_DEFAULT_OUTPUTS: tuple[str, ...] = tuple(FED_CTC_OUTPUT_IDS)
+
+# The output the server aggregates and the UI headlines. Named once, here,
+# so the number, the label, and the artifact staleness check can't drift
+# apart (issue #11: the server summed a pre-phase-out output under a
+# "final cost" label for the whole of v1).
+FED_CTC_HEADLINE_OUTPUT = "ctc_before_advance_payments"
 
 CO_SNAP_RELATION_NAME = "us:statutes/7/2012/j#relation.member_of_household"
 
@@ -235,9 +276,10 @@ def run_federal_ctc(
     overrides: list[ParameterOverride] | None = None,
     outputs: tuple[str, ...] = FED_CTC_DEFAULT_OUTPUTS,
 ) -> "MicrosimResult":
-    """Execute the §24(h) CTC RuleSpec module over an ECPS tax-unit batch.
+    """Execute the §24 CTC RuleSpec program over an ECPS tax-unit batch.
 
-    All §24(h) computation lives in rules-us/statutes/26/24/h.yaml; this
+    All §24 computation — including the §24(b)(1) phase-out — lives in
+    rules-us/statutes/26/24.yaml and the §24(h) module it imports; this
     function only orchestrates: project → compile → run-compiled → decode.
     """
     projection = project_federal_ctc(batch, period_year=period_year)
@@ -461,11 +503,28 @@ def _artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path
     return out, scratch
 
 
+def _artifact_provides(artifact_path: Path, output_id: str) -> bool:
+    """True if a compiled artifact declares ``output_id`` as a derived rule.
+
+    Cached baseline artifacts outlive the program they were compiled from
+    (both the local `engine/artifacts` dir and the Modal image bake them).
+    Checking for the output we're about to query turns a stale artifact
+    into a recompile instead of a wrong headline number.
+    """
+    try:
+        artifact = orjson.loads(artifact_path.read_bytes())
+    except OSError, orjson.JSONDecodeError:
+        return False
+    derived = artifact.get("program", {}).get("derived", [])
+    return any(rule.get("id") == output_id for rule in derived)
+
+
 def _ctc_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path | None]:
-    """Compile §24(h) (with optional reform overrides) and return artifact path."""
+    """Compile §24 (with optional reform overrides) and return artifact path."""
+    headline_output = FED_CTC_OUTPUT_IDS[FED_CTC_HEADLINE_OUTPUT]
     if not overrides:
         baseline = ARTIFACTS_DIR / "federal-ctc.compiled.json"
-        if not baseline.exists():
+        if not baseline.exists() or not _artifact_provides(baseline, headline_output):
             scratch = _staged_rules_trees()
             try:
                 ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -489,21 +548,44 @@ def _ctc_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, 
 
 _CTC_REQUEST_CACHE = _BoundedRequestCache()
 
+# Tax units per engine invocation. §24 is computed entirely within a tax
+# unit, so slicing the population is arithmetically identical to one big
+# run (verified: identical $151.329B nationwide total at 5k / 10k / 20k /
+# no chunking) — but the engine answers every query with a full dependency
+# trace, ~5 KB per tax unit at this program size, and decoding a nationwide
+# response in one piece peaked at 6.4 GB in an 8 GB container that also
+# hosts PolicyEngine for /compare. At 5k the peak is 2.1 GB for the same
+# wall clock, so this costs nothing but subprocess spawns.
+CTC_CHUNK_TAX_UNITS = 5_000
+
+
+def _ctc_chunks(n_tax_units: int) -> list[tuple[int, int]]:
+    """Half-open [start, end) tax-unit ranges, in order."""
+    return [
+        (start, min(start + CTC_CHUNK_TAX_UNITS, n_tax_units))
+        for start in range(0, max(n_tax_units, 1), CTC_CHUNK_TAX_UNITS)
+    ]
+
 
 def _build_ctc_request_bytes(
     projection: FedCtcProjection,
     period_year: int,
     output_names: tuple[str, ...],
     cache_key: tuple | None = None,
+    tu_range: tuple[int, int] | None = None,
 ) -> bytes:
-    """Build + encode the §24(h) request once per (state, period, outputs).
-    Reform calls reuse this — only the artifact path changes between
-    baseline and reform, not the inputs."""
+    """Build + encode one §24 request slice.
+
+    Cached per (state, period, outputs, slice) — reform calls reuse it,
+    since only the artifact path changes between baseline and reform, not
+    the inputs.
+    """
     if cache_key is not None:
         cached = _CTC_REQUEST_CACHE.get(cache_key)
         if cached is not None:
             return cached
 
+    tu_start, tu_end = tu_range if tu_range is not None else (0, projection.n_tax_units)
     interval = {"start": f"{period_year}-01-01", "end": f"{period_year}-12-31"}
     period = {"period_kind": "tax_year", "start": interval["start"], "end": interval["end"]}
     output_ids = [FED_CTC_OUTPUT_IDS[n] for n in output_names]
@@ -512,7 +594,7 @@ def _build_ctc_request_bytes(
     relations: list[dict] = []
     queries: list[dict] = []
 
-    for tu_idx in range(projection.n_tax_units):
+    for tu_idx in range(tu_start, tu_end):
         tu_id = f"tu{tu_idx}"
         for full_id, column in projection.tax_unit_inputs.items():
             inputs.append(
@@ -526,12 +608,32 @@ def _build_ctc_request_bytes(
             )
         queries.append({"entity_id": tu_id, "period": period, "outputs": output_ids})
 
-    pos_in_sorted = np.arange(projection.n_persons)
+    # Persons are sorted by tax unit, so this slice's persons are exactly
+    # the offsets range of its tax units.
+    person_start = int(projection.relation_offsets[tu_start])
+    person_end = int(projection.relation_offsets[tu_end])
+    pos_in_sorted = np.arange(person_start, person_end)
     tu_for_person = np.searchsorted(projection.relation_offsets, pos_in_sorted, side="right") - 1
 
-    for sorted_p_idx in range(projection.n_persons):
+    # Tax-unit facts read by person-scoped rules have to be asserted on the
+    # person rows too. Only those — replicating all of them would multiply
+    # the request by the number of tax-unit inputs (see PERFORMANCE.md, C).
+    tax_unit_inputs_on_persons = [
+        (full_id, column)
+        for full_id, column in projection.tax_unit_inputs.items()
+        if full_id in projection.tax_unit_inputs_on_persons
+    ]
+
+    for sorted_p_idx in range(person_start, person_end):
+        # Persons who can't be claimed as a dependent carry all-false §24
+        # flags: they never satisfy either `count_where` predicate and no
+        # rule reads anything else about them. Sending their rows costs
+        # ~15 records each and changes no output (regression-tested in
+        # tests/test_federal_ctc_program.py).
+        if not projection.person_in_scope[sorted_p_idx]:
+            continue
         person_id = f"p{sorted_p_idx}"
-        tu_idx = int(tu_for_person[sorted_p_idx])
+        tu_idx = int(tu_for_person[sorted_p_idx - person_start])
         tu_id = f"tu{tu_idx}"
         for full_id, column in projection.person_inputs.items():
             inputs.append(
@@ -543,7 +645,7 @@ def _build_ctc_request_bytes(
                     "value": _scalar_value(column[sorted_p_idx]),
                 }
             )
-        for full_id, column in projection.tax_unit_inputs.items():
+        for full_id, column in tax_unit_inputs_on_persons:
             inputs.append(
                 {
                     "name": full_id,
@@ -553,13 +655,14 @@ def _build_ctc_request_bytes(
                     "value": _scalar_value(column[tu_idx]),
                 }
             )
-        relations.append(
-            {
-                "name": FED_CTC_RELATION_NAME,
-                "tuple": [person_id, tu_id],
-                "interval": interval,
-            }
-        )
+        for relation_name in FED_CTC_RELATION_NAMES:
+            relations.append(
+                {
+                    "name": relation_name,
+                    "tuple": [person_id, tu_id],
+                    "interval": interval,
+                }
+            )
 
     request = {
         "mode": "fast",
@@ -579,37 +682,44 @@ def _execute_ctc(
     output_names: tuple[str, ...],
     cache_key: tuple | None = None,
 ) -> dict[str, np.ndarray]:
-    """Build a CompiledExecutionRequest for §24(h) and run it."""
-    request_bytes = _build_ctc_request_bytes(
-        projection, period_year, output_names, cache_key=cache_key
-    )
-
-    proc = subprocess.run(
-        [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
-        input=request_bytes,
-        capture_output=True,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"engine failed:\n{proc.stderr.strip()[:1500]}")
-    response = orjson.loads(proc.stdout)
-
+    """Run the §24 program over the batch, one tax-unit chunk at a time."""
     id_to_name = {v: k for k, v in FED_CTC_OUTPUT_IDS.items()}
     arrays = {n: np.zeros(projection.n_tax_units, dtype=np.float64) for n in output_names}
-    for qr in response["results"]:
-        eid = qr["entity_id"]
-        if not eid.startswith("tu"):
-            continue
-        idx = int(eid[2:])
-        for key, out in qr["outputs"].items():
-            name = id_to_name.get(key, key)
-            if name not in arrays:
+
+    for tu_range in _ctc_chunks(projection.n_tax_units):
+        chunk_key = None if cache_key is None else (*cache_key, tu_range)
+        request_bytes = _build_ctc_request_bytes(
+            projection, period_year, output_names, cache_key=chunk_key, tu_range=tu_range
+        )
+        proc = subprocess.run(
+            [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
+            input=request_bytes,
+            capture_output=True,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"engine failed:\n{proc.stderr.strip()[:1500]}")
+        response = orjson.loads(proc.stdout)
+        # Drop the raw bytes before walking the decoded response — for a
+        # nationwide run each is hundreds of MB.
+        proc = None
+
+        for qr in response["results"]:
+            eid = qr["entity_id"]
+            if not eid.startswith("tu"):
                 continue
-            if out["kind"] == "scalar":
-                v = out["value"]
-                if v["kind"] in ("decimal", "integer"):
-                    arrays[name][idx] = float(v["value"])
-                elif v["kind"] == "bool":
-                    arrays[name][idx] = 1.0 if v["value"] else 0.0
+            idx = int(eid[2:])
+            for key, out in qr["outputs"].items():
+                name = id_to_name.get(key, key)
+                if name not in arrays:
+                    continue
+                if out["kind"] == "scalar":
+                    v = out["value"]
+                    if v["kind"] in ("decimal", "integer"):
+                        arrays[name][idx] = float(v["value"])
+                    elif v["kind"] == "bool":
+                        arrays[name][idx] = 1.0 if v["value"] else 0.0
+        response = None
+
     return arrays
 
 

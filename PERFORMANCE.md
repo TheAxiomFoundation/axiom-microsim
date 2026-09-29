@@ -4,6 +4,32 @@
 > filesystem, warm Python process. Network round-trip from a browser
 > through Vercel → Modal adds ~300–800 ms on top of every figure here.
 
+> **2026-07-25 — the CTC figures below are superseded.** They were taken
+> against a 30k-tax-unit population; the pinned populace artifact carries
+> 87,519. Re-measured back-to-back on one machine (busy with other work,
+> so read the ratio rather than the absolutes): **8.2 s** for the old
+> §24(h)-only program, **13.4 s** for the §24 program that applies the
+> phase-out (issue #11). The extra cost is the wider program — 22 derived
+> rules against 9, ~2 M input records against ~1.5 M, and a dependency
+> trace per tax unit in every response.
+>
+> Two mitigations landed with that change, both worth knowing before
+> optimising further:
+> - **Person rows are scoped to claimed dependents.** Heads and spouses
+>   carry all-false §24 flags, so their ~15 records each changed no output.
+>   Request: 903 MB → 448 MB; engine: 23 s → 10 s.
+> - **The engine runs in `CTC_CHUNK_TAX_UNITS` slices.** Decoding a
+>   nationwide response whole peaked at **6.4 GB** in an 8 GB container
+>   that also hosts PolicyEngine; at 5k tax units per chunk the peak is
+>   **2.1 GB** for the same wall clock. Item C below (don't replicate
+>   TaxUnit inputs onto Person rows) is now done for CTC; item "chunk the
+>   JSON" is done as slicing rather than streaming.
+>
+> The one change that would still pay off big: the engine emits a full
+> dependency trace per query with no way to opt out, which is most of the
+> ~600 MB response. A `trace: false` request flag would cut both the
+> response and the decode.
+
 ## Headline
 
 | Program · scope · kind | Total | Engine subprocess | Dominant cost |

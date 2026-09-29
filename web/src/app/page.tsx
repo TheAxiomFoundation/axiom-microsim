@@ -208,6 +208,10 @@ export default function Page() {
   const reformDelta = reform.data?.reform
     ? reform.data.reform.delta_annual_cost
     : null;
+  // What the headline number is, per the server that computed it. Falls back
+  // to the program's static label only for an older backend.
+  const measure = baseline.data?.measure ?? reform.data?.measure ?? null;
+  const headline = measure?.label ?? program.headline_label;
   const peBaselineTotal = peReform.result?.baselineTotal ?? pe.result?.total ?? null;
   const peDelta =
     peReform.result && peBaselineTotal != null ? peReform.result.total - peBaselineTotal : null;
@@ -310,7 +314,7 @@ export default function Page() {
       {/* ---- Baseline number ---- */}
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <StatCard
-          label={`${program.headline_label} · baseline`}
+          label={`${headline} · baseline`}
           value={
             baseline.startedAt !== null
               ? `running… ${elapsed(baseline.startedAt)}s`
@@ -333,6 +337,16 @@ export default function Page() {
           peRatio={ratio(baseline.data?.baseline.annual_cost, pe.result?.total)}
         />
       </div>
+
+      {measure && (
+        <p className="mb-6 max-w-2xl text-xs text-ink-muted">
+          {measure.note}{" "}
+          <span className="font-mono text-[0.65rem]">
+            {measure.output_id}
+            {peEnabled && measure.pe_variable && <> · PE: {measure.pe_variable}</>}
+          </span>
+        </p>
+      )}
 
       {/* ---- Reform levers ---- */}
       <section className="mb-6 rounded-md border border-rule bg-paper-elev p-5">
@@ -382,7 +396,7 @@ export default function Page() {
       {(reform.data?.reform || reform.startedAt !== null) && (
         <div className="mb-6 grid gap-3 sm:grid-cols-3">
           <StatCard
-            label={`${program.headline_label} · reform`}
+            label={`${headline} · reform`}
             value={
               reform.startedAt !== null
                 ? `running… ${elapsed(reform.startedAt)}s`

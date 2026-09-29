@@ -1,9 +1,19 @@
-"""Project an :class:`TaxUnitBatch` into the inputs §24(h) CTC expects.
+"""Project a :class:`TaxUnitBatch` into the inputs §24 CTC expects.
 
-§24(h) needs to know, per person, whether they are:
+We run the **parent** §24 module, not §24(h) alone. §24(h) states only
+the post-2017 substitutions — the $2,200 per-child amount, the $500
+other-dependent amount, the $400k/$200k thresholds — and its outputs stop
+at the maximum *before* phase-out. §24(b)(1) does the reduction, and it
+lives in the parent module, which imports the (h) amounts. Running the
+parent is what makes the phase-out threshold lever move the number.
+
+Per person the statute needs to know whether they are:
   - a dependent under §152, AND
-  - a qualifying child under §24(c) (age < 17 typically), AND
-  - have a valid SSN included on the return.
+  - a qualifying child under §152(c) / §24(c) (age < 17 typically), AND
+  - have a valid SSN/TIN included on the return.
+
+Per tax unit it needs modified AGI (§24(b)(1)), filing status, and the
+disallowance/short-year facts that gate the credit entirely.
 
 ECPS doesn't carry these as stored variables. We synthesize them with a
 simple within-tax-unit role classification:
@@ -14,8 +24,10 @@ simple within-tax-unit role classification:
   - dependent + age < 17 → qualifying child
   - dependent + 17 ≤ age < 24 → other dependent (treated as §152 dependent)
 
-SSN-related slots default to True (we assume valid US SSN unless ECPS
-gives us reason to think otherwise; documented as a v2 gap).
+SSN/TIN-related slots default to True (we assume valid US SSN unless ECPS
+gives us reason to think otherwise; documented as a v2 gap). So do the
+disallowance slots — no ECPS household is in a fraud-disallowance period,
+files a short year, or received §7527A advance payments.
 """
 
 from __future__ import annotations
@@ -28,12 +40,29 @@ from ..data.ecps_loader import (
     TaxUnitBatch,
     count_persons_per_tax_unit,
     sum_person_to_tax_unit,
+    tax_unit_agi,
 )
 
 
 ADULT_AGE = 18
 QUALIFYING_CHILD_AGE = 17  # under age 17 → §24(c) qualifying child
 OTHER_DEPENDENT_MAX_AGE = 24  # under 24 → other dependent (§152, child of taxpayer)
+
+# Module id prefixes for the two RuleSpec modules in the §24 program.
+CTC_PARENT = "us:statutes/26/24"
+CTC_SUBSECTION_H = "us:statutes/26/24/h"
+
+# Tax-unit facts that *person*-scoped rules read: the (h)(7) taxpayer-SSN
+# conditions (evaluated inside a Person judgment) and the identification
+# flag inside §24's `count_where` over qualifying children. Only these get
+# replicated onto person rows — see `run.microsim._build_ctc_request_bytes`.
+TAX_UNIT_INPUTS_ON_PERSONS: frozenset[str] = frozenset(
+    {
+        f"{CTC_SUBSECTION_H}#input.taxpayer_or_spouse_ssn_included_on_return",
+        f"{CTC_SUBSECTION_H}#input.taxpayer_or_spouse_ssn_is_valid_for_subsection_h",
+        f"{CTC_PARENT}#input.ctc_child_missing_identification",
+    }
+)
 
 
 @dataclass
@@ -52,10 +81,21 @@ class FedCtcProjection:
     person_sort: np.ndarray
     relation_offsets: np.ndarray
 
+    # Persons the §24 rules can read, in `person_sort` order. Every §24
+    # person rule is about a claimed dependent; heads and spouses carry
+    # all-false dependency flags, contribute nothing to either
+    # `count_where`, and cost ~15 input records each. See
+    # `run.microsim._build_ctc_request_bytes`.
+    person_in_scope: np.ndarray
+
     # Diagnostics
     qualifying_children_per_tu: np.ndarray
     other_dependents_per_tu: np.ndarray
     filing_status: np.ndarray
+
+    # Subset of `tax_unit_inputs` that must also be asserted on each person
+    # row (person-scoped rules read them). Everything else stays TaxUnit-only.
+    tax_unit_inputs_on_persons: frozenset[str] = TAX_UNIT_INPUTS_ON_PERSONS
 
 
 def project(batch: TaxUnitBatch, *, period_year: int = 2026) -> FedCtcProjection:
@@ -118,32 +158,66 @@ def project(batch: TaxUnitBatch, *, period_year: int = 2026) -> FedCtcProjection
     np.cumsum(counts, out=offsets[1:])
 
     # --- Build engine inputs --------------------------------------------------
+    all_true_persons = np.ones(batch.n_persons, dtype=bool)
+    all_false_persons = np.zeros(batch.n_persons, dtype=bool)
+    all_true_tax_units = np.ones(n_tu, dtype=bool)
+    all_false_tax_units = np.zeros(n_tu, dtype=bool)
+    zero_tax_units = np.zeros(n_tu, dtype=np.float64)
+
     person_inputs = {
-        "us:statutes/26/24/h#input.dependent_under_section_152": dependent_152[person_sort].astype(
+        # §24(h) — post-2017 amounts and the SSN requirement.
+        f"{CTC_SUBSECTION_H}#input.dependent_under_section_152": dependent_152[person_sort].astype(
             bool
         ),
-        "us:statutes/26/24/h#input.qualifying_child_described_in_subsection_c": is_qualifying_child[
+        f"{CTC_SUBSECTION_H}#input.qualifying_child_described_in_subsection_c": is_qualifying_child[
             person_sort
         ].astype(bool),
-        "us:statutes/26/24/h#input.qualifying_child_ssn_included_on_return": np.ones(
-            batch.n_persons, dtype=bool
-        ),
-        "us:statutes/26/24/h#input.qualifying_child_ssn_is_valid_for_subsection_h": np.ones(
-            batch.n_persons, dtype=bool
-        ),
-        "us:statutes/26/24/h#input.noncitizen_exception_to_other_dependent_credit_under_subsection_h": np.zeros(
-            batch.n_persons, dtype=bool
-        ),
+        f"{CTC_SUBSECTION_H}#input.qualifying_child_ssn_included_on_return": all_true_persons,
+        f"{CTC_SUBSECTION_H}#input.qualifying_child_ssn_is_valid_for_subsection_h": all_true_persons,
+        f"{CTC_SUBSECTION_H}#input.noncitizen_exception_to_other_dependent_credit_under_subsection_h": all_false_persons,
+        # §24(c)/§152(c) — the parent module applies the age-17 ceiling itself,
+        # so this is "dependent child of the taxpayer", not "under 17".
+        f"{CTC_PARENT}#input.age": age[person_sort],
+        f"{CTC_PARENT}#input.qualifying_child_under_section_152_c": dependent_152[
+            person_sort
+        ].astype(bool),
+        f"{CTC_PARENT}#input.allowed_deduction_under_section_151_for_child": dependent_152[
+            person_sort
+        ].astype(bool),
+        f"{CTC_PARENT}#input.certain_noncitizen_exception_applies": all_false_persons,
+        # §24(e) identification — same assumption as the (h)(7) SSN slots.
+        f"{CTC_PARENT}#input.qualifying_child_name_included_on_return": all_true_persons,
+        f"{CTC_PARENT}#input.qualifying_child_tin_included_on_return": all_true_persons,
+        f"{CTC_PARENT}#input.qualifying_child_tin_issued_on_or_before_return_due_date": all_true_persons,
     }
 
     tax_unit_inputs = {
-        "us:statutes/26/24/h#input.filing_status_is_joint_return": (filing_status == 1),
-        "us:statutes/26/24/h#input.taxpayer_or_spouse_ssn_included_on_return": np.ones(
-            n_tu, dtype=bool
+        f"{CTC_SUBSECTION_H}#input.filing_status_is_joint_return": (filing_status == 1),
+        f"{CTC_SUBSECTION_H}#input.taxpayer_or_spouse_ssn_included_on_return": all_true_tax_units,
+        f"{CTC_SUBSECTION_H}#input.taxpayer_or_spouse_ssn_is_valid_for_subsection_h": all_true_tax_units,
+        # §24(b)(1) modified AGI — the phase-out base. Same AGI proxy the
+        # decile axis uses; §911/§931/§933 exclusions aren't in ECPS, so the
+        # modification adds nothing.
+        f"{CTC_PARENT}#input.adjusted_gross_income": tax_unit_agi(batch),
+        f"{CTC_PARENT}#input.amount_excluded_from_gross_income_under_section_911": zero_tax_units,
+        f"{CTC_PARENT}#input.amount_excluded_from_gross_income_under_section_931": zero_tax_units,
+        f"{CTC_PARENT}#input.amount_excluded_from_gross_income_under_section_933": zero_tax_units,
+        f"{CTC_PARENT}#input.filing_status": filing_status,
+        # §24(h)(1) — every year this microsim runs begins after 2017, so the
+        # (h) substitutions apply. Derived from the period, not hardcoded.
+        f"{CTC_PARENT}#input.taxable_year_begins_after_2017": np.full(
+            n_tu, period_year > 2017, dtype=bool
         ),
-        "us:statutes/26/24/h#input.taxpayer_or_spouse_ssn_is_valid_for_subsection_h": np.ones(
-            n_tu, dtype=bool
-        ),
+        # §24(e)/(f)/(g)/(j) gates: full 12-month year, no disallowance
+        # period, no §7527A advance payments. ECPS carries none of these.
+        f"{CTC_PARENT}#input.taxable_year_months": np.full(n_tu, 12, dtype=np.int64),
+        f"{CTC_PARENT}#input.taxable_year_closed_by_reason_of_taxpayer_death": all_false_tax_units,
+        f"{CTC_PARENT}#input.taxpayer_identification_number_issued_after_return_due_date": all_false_tax_units,
+        f"{CTC_PARENT}#input.ctc_child_missing_identification": all_false_tax_units,
+        f"{CTC_PARENT}#input.ctc_fraud_disallowance_period_applies": all_false_tax_units,
+        f"{CTC_PARENT}#input.ctc_reckless_or_intentional_disregard_disallowance_period_applies": all_false_tax_units,
+        f"{CTC_PARENT}#input.prior_deficiency_denial_without_required_eligibility_information": all_false_tax_units,
+        f"{CTC_PARENT}#input.aggregate_advance_payments_under_section_7527A": zero_tax_units,
     }
 
     qualifying_children_per_tu = sum_person_to_tax_unit(
@@ -162,6 +236,7 @@ def project(batch: TaxUnitBatch, *, period_year: int = 2026) -> FedCtcProjection
         person_inputs=person_inputs,
         person_sort=person_sort,
         relation_offsets=offsets,
+        person_in_scope=dependent_152[person_sort],
         qualifying_children_per_tu=qualifying_children_per_tu,
         other_dependents_per_tu=other_dependents_per_tu,
         filing_status=filing_status,

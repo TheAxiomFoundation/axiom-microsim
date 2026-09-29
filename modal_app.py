@@ -30,14 +30,18 @@ import modal
 app = modal.App("axiom-microsim")
 
 # Bump when any pinned SHA below changes so the layer rebuilds.
-ENGINE_VERSION = "v0.2.4-co-snap-artifact"
+ENGINE_VERSION = "v0.2.5-ctc-post-phase-out"
 
 # Pinned SHAs.
-# rules-us at current main — has §1(j), §24(h), §32, §63 etc. that we need.
+# rules-us pinned one commit forward of d9a03f1 to 557d155 ("Encode 26 USC 24
+# child tax credit"), which adds `statutes/26/24.yaml` — the parent module
+# that applies the §24(b)(1) phase-out to §24(h)'s amounts. That single
+# commit adds three files and touches nothing else, so §1(j) and CO SNAP
+# compile exactly as before.
 # rules-us-co pinned back to the SHA axiom-co-snap uses; current main has
 # a YAML formula with `\` syntax the engine doesn't yet parse.
 AXIOM_RULES_ENGINE_SHA = "f2412104e45c49d5b90818da38211fac70419d52"
-RULESPEC_US_SHA = "d9a03f172d5d2753ec3557b4e56f778f7f72b819"
+RULESPEC_US_SHA = "557d15516986488a77b0f995f0940c66edd85154"
 RULESPEC_US_CO_SHA = "ba00673d73c19f262d542cfa597b0b365a1313b7"
 CO_SNAP_PROGRAM_REL = "policies/cdhs/snap/fy-2026-benefit-calculation.yaml"
 
@@ -49,7 +53,10 @@ PROGRAMS_TO_COMPILE: dict[str, tuple[str, str]] = {
     # engine's import resolver looks for `rulespec-{prefix}` siblings.
     "co-snap": ("rulespec-us-co", CO_SNAP_PROGRAM_REL),
     "federal-income-tax": ("rulespec-us", "statutes/26/1/j.yaml"),
-    "federal-ctc": ("rulespec-us", "statutes/26/24/h.yaml"),
+    # The parent §24 module, not h.yaml — h alone stops at the maximum
+    # before phase-out. Must stay in step with
+    # `axiom_microsim.run.microsim.FED_CTC_PROGRAM_REL`.
+    "federal-ctc": ("rulespec-us", "statutes/26/24.yaml"),
 }
 
 # Population data lives on a Modal Volume so cold starts don't pay the

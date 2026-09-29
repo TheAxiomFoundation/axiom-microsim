@@ -52,6 +52,16 @@ export interface PovertyImpact {
   people_falling_into_poverty: number;
 }
 
+/** What the headline number is, served by the code that computes it.
+ *  Display `label` verbatim — a local caption is how the CTC headline
+ *  came to say "cost" for a pre-phase-out maximum (issue #11). */
+export interface Measure {
+  output_id: string;
+  label: string;
+  note: string;
+  pe_variable?: string | null;
+}
+
 export interface MicrosimResponse {
   program: string;
   state: string;
@@ -61,6 +71,7 @@ export interface MicrosimResponse {
   households_total_weighted: number;
   baseline: Baseline;
   reform?: Reform;
+  measure?: Measure | null;
 }
 
 export interface Override {

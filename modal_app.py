@@ -84,7 +84,12 @@ _compile_cmds = [
 
 
 image = (
-    modal.Image.debian_slim(python_version="3.13")
+    # Must match `requires-python` in pyproject.toml. CI tests only that
+    # version, so a mismatch here means CI-green code can fail at import on
+    # Modal (e.g. PEP 758 parenless `except` parses on 3.14, SyntaxErrors on
+    # 3.13). tests/test_runtime_consistency.py (run by the pytest step of
+    # ci.yml's test job) enforces this equality.
+    modal.Image.debian_slim(python_version="3.14")
     .apt_install(
         "git", "curl", "build-essential", "pkg-config", "libssl-dev", "ca-certificates",
     )
@@ -151,7 +156,9 @@ image = (
         # steps can't see it.
         copy=True,
     )
-    .run_commands("pip install --ignore-requires-python /opt/axiom-microsim")
+    # pip enforces `requires-python` here, so an image built on the wrong
+    # Python fails at build time, not at import. Keep it that way.
+    .run_commands("pip install /opt/axiom-microsim")
     .env({
         "AXIOM_ARTIFACTS_DIR": "/opt/artifacts",
         "AXIOM_RULES_US_DIR": "/opt/rulespec-us",

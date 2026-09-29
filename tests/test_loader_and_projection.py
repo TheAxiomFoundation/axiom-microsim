@@ -24,9 +24,13 @@ from axiom_microsim.data.ecps_loader import load_state, sum_person_to_household
 from axiom_microsim.data.populace_loader import POPULACE_ENV_VAR
 from axiom_microsim.project.co_snap import project
 from axiom_microsim.run.microsim import (
+    CO_SNAP_RELATION_NAME,
     FED_SNAP_EXCESS_SHELTER_INPUT,
+    HOUSEHOLD,
+    PERSON,
     _build_compiled_request,
 )
+from axiom_microsim.run.relation_layout import RelationLayout
 
 
 def _population_available() -> bool:
@@ -112,6 +116,9 @@ def test_compiled_request_can_bind_federal_shelter_bridge() -> None:
         2026,
         ["us-co:regulations/10-ccr-2506-1/4.207.2#snap_allotment"],
         extra_household_inputs={FED_SNAP_EXCESS_SHELTER_INPUT: values},
+        layout=RelationLayout.legacy(
+            CO_SNAP_RELATION_NAME, owner_kind=HOUSEHOLD, member_kind=PERSON
+        ),
     )
 
     matched = [

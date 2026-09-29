@@ -86,6 +86,7 @@ def profile_co_snap(state: str, reform: bool) -> list[Phase]:
         CO_SNAP_BASELINE_PROGRAM, CO_SNAP_BASELINE_ARTIFACT, CO_SNAP_INPUT_PREFIX,
         CO_SNAP_RELATION_NAME, DEFAULT_OUTPUTS, DEFAULT_OUTPUT_IDS, ENGINE_BIN,
         _slots, _scalar_value, ParameterOverride, _artifact_for, _execute_compiled,
+        _co_snap_layout,
     )
     phases: list[Phase] = []
 
@@ -121,6 +122,9 @@ def profile_co_snap(state: str, reform: bool) -> list[Phase]:
     output_ids = [DEFAULT_OUTPUT_IDS[n] for n in output_names]
     interval = {"start": "2026-01-01", "end": "2026-01-31"}
     period = {"period_kind": "month", "start": "2026-01-01", "end": "2026-01-31"}
+
+    # Tuple order comes from the artifact (axiom-rules-engine#179/#190).
+    layout = _co_snap_layout(artifact_path)
 
     with time_phase("5 · build CompiledExecutionRequest", phases) as bag:
         hh_slots, person_slots = _slots()
@@ -166,7 +170,8 @@ def profile_co_snap(state: str, reform: bool) -> list[Phase]:
                 })
             relations.append({
                 "name": CO_SNAP_RELATION_NAME,
-                "tuple": [person_id, hh_id], "interval": interval,
+                "tuple": layout.tuple_for(owner_id=hh_id, member_id=person_id),
+                "interval": interval,
             })
         request = {"mode": "fast", "dataset": {"inputs": inputs, "relations": relations}, "queries": queries}
         bag["items"] = len(inputs) + len(relations) + len(queries)
@@ -314,7 +319,7 @@ def profile_federal_ctc(state: str, reform: bool) -> list[Phase]:
     from axiom_microsim.run.microsim import (
         ENGINE_BIN, FED_CTC_OUTPUT_IDS, FED_CTC_DEFAULT_OUTPUTS,
         FED_CTC_RELATION_NAME, ParameterOverride, _scalar_value,
-        _ctc_artifact_for, ARTIFACTS_DIR,
+        _ctc_artifact_for, _ctc_layout, ARTIFACTS_DIR,
     )
     phases: list[Phase] = []
 
@@ -345,6 +350,8 @@ def profile_federal_ctc(state: str, reform: bool) -> list[Phase]:
     output_ids = [FED_CTC_OUTPUT_IDS[n] for n in output_names]
     interval = {"start": "2026-01-01", "end": "2026-12-31"}
     period = {"period_kind": "tax_year", "start": interval["start"], "end": interval["end"]}
+    # Tuple order comes from the artifact (axiom-rules-engine#179/#190).
+    layout = _ctc_layout(artifact_path)
 
     with time_phase("5 · build CompiledExecutionRequest", phases) as bag:
         inputs: list[dict] = []
@@ -369,7 +376,9 @@ def profile_federal_ctc(state: str, reform: bool) -> list[Phase]:
             for full_id, column in proj.tax_unit_inputs.items():
                 inputs.append({"name": full_id, "entity": "Person", "entity_id": person_id,
                                "interval": interval, "value": _scalar_value(column[tu_idx])})
-            relations.append({"name": FED_CTC_RELATION_NAME, "tuple": [person_id, tu_id], "interval": interval})
+            relations.append({"name": FED_CTC_RELATION_NAME,
+                              "tuple": layout.tuple_for(owner_id=tu_id, member_id=person_id),
+                              "interval": interval})
         request = {"mode": "fast", "dataset": {"inputs": inputs, "relations": relations}, "queries": queries}
         bag["items"] = len(inputs) + len(relations) + len(queries)
 

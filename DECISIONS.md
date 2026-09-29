@@ -84,3 +84,34 @@ which transport is on the other side.
 
 **Why.** Halves the surface area to test. Avoids the trap where Modal
 diverges silently from local dev.
+
+## D7 — Relation tuple order comes from the compiled artifact
+
+**Decision.** Two-slot relation tuples (`dependent_of_tax_unit` for the
+CTC, `member_of_household` for CO SNAP) are ordered by the compiled
+artifact the request runs against, not by the producer.
+`axiom_microsim/run/relation_layout.py` reads the order. It ports the
+engine's own inference (`relation_usage_records`, axiom-rules-engine#190).
+Each `count_related`, `sum_related` or `relation_member` node on the relation
+puts its evaluating entity in its `current_slot`. That holds directly or
+through a derived relation. The entity of the rules its value and predicate
+read goes in its `related_slot`. The owner goes wherever those kinds place it.
+The declared `slot_entities` decide only for a relation the program never
+evaluates. With neither, the legacy slot 1 applies. Uses that disagree, or a
+use that pins no slot, raise rather than guess. Input records carry their real
+entity kinds (`TaxUnit`, `Household`, `Person`).
+
+**Why.** axiom-rules-engine#179 made artifacts compiled from typed RuleSpec
+aggregate in declared argument order. §24(h) declares `[TaxUnit, Person]`,
+so a post-#179 artifact needs `[tax_unit, person]`. Older artifacts,
+including those from the engine `modal_app.py` pins, aggregate from slot 1
+and need `[person, tax_unit]`. The wrong order counts no dependents and
+exits 0. axiom-rules-engine#190 rejects it under strict binding when the
+artifact declares slot kinds, but not for untyped artifacts. Artifacts
+compiled between #140 and #179 declare `[TaxUnit, Person]` yet still
+aggregate from slot 1, so the declaration alone is not enough (issue #23).
+
+**How to apply.** A new relation-emitting builder takes a `RelationLayout`
+from `relation_layout_for_artifact(...)` and builds tuples with
+`layout.tuple_for(owner_id=..., member_id=...)`. Request caches key on
+`layout.slot_kinds`. Never send `"relation_binding": "lenient"`.

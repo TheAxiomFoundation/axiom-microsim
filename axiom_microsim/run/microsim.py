@@ -34,6 +34,7 @@ from ..project.federal_income_tax import (
     FedIncomeTaxProjection,
     project as project_federal_income_tax,
 )
+from .relation_layout import RelationLayout, relation_layout_for_artifact
 
 # --- Bounded LRU for request-bytes caches -----------------------------------
 #
@@ -120,6 +121,14 @@ FED_CTC_OUTPUT_IDS: dict[str, str] = {
 FED_CTC_DEFAULT_OUTPUTS: tuple[str, ...] = tuple(FED_CTC_OUTPUT_IDS)
 
 CO_SNAP_RELATION_NAME = "us:statutes/7/2012/j#relation.member_of_household"
+
+# Entity kinds on dataset input records. The engine derives each entity id's
+# kind from these labels and, under strict binding (axiom-rules-engine#190),
+# rejects a relation tuple that puts an id in a slot expecting another kind.
+# Tuple order comes from the artifact; see relation_layout.py.
+TAX_UNIT = "TaxUnit"
+PERSON = "Person"
+HOUSEHOLD = "Household"
 
 # CO SNAP's compiled artifact carries schema name "co-snap.fy-2026" and
 # expects InputRecord.name in the synthetic-input form. Mirrors
@@ -335,7 +344,7 @@ def _execute_fed_income_tax_dense(
     """In-process dense execution. No JSON, no subprocess."""
     from axiom_rules_engine.dense import CompiledDenseProgram
 
-    program = CompiledDenseProgram.from_file(str(program_yaml), entity="TaxUnit")
+    program = CompiledDenseProgram.from_file(str(program_yaml), entity=TAX_UNIT)
     # The projection keys inputs by their full RuleSpec id; the dense
     # binding wants bare slot names.
     dense_inputs = {
@@ -490,16 +499,27 @@ def _ctc_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, 
 _CTC_REQUEST_CACHE = _BoundedRequestCache()
 
 
+def _ctc_layout(artifact_path: Path) -> RelationLayout:
+    return relation_layout_for_artifact(
+        artifact_path, FED_CTC_RELATION_NAME, owner_kind=TAX_UNIT, member_kind=PERSON
+    )
+
+
 def _build_ctc_request_bytes(
     projection: FedCtcProjection,
     period_year: int,
     output_names: tuple[str, ...],
     cache_key: tuple | None = None,
+    *,
+    layout: RelationLayout,
 ) -> bytes:
-    """Build + encode the §24(h) request once per (state, period, outputs).
-    Reform calls reuse this — only the artifact path changes between
-    baseline and reform, not the inputs."""
+    """Build + encode the §24(h) request once per (state, period, outputs,
+    tuple order). Reform calls reuse this — only the artifact path changes
+    between baseline and reform, not the inputs. ``layout`` is the tuple
+    order read from the artifact the request will run against."""
+    _check_layout(layout, FED_CTC_RELATION_NAME, TAX_UNIT, PERSON)
     if cache_key is not None:
+        cache_key = (*cache_key, layout.slot_kinds)
         cached = _CTC_REQUEST_CACHE.get(cache_key)
         if cached is not None:
             return cached
@@ -518,7 +538,7 @@ def _build_ctc_request_bytes(
             inputs.append(
                 {
                     "name": full_id,
-                    "entity": "TaxUnit",
+                    "entity": TAX_UNIT,
                     "entity_id": tu_id,
                     "interval": interval,
                     "value": _scalar_value(column[tu_idx]),
@@ -537,7 +557,7 @@ def _build_ctc_request_bytes(
             inputs.append(
                 {
                     "name": full_id,
-                    "entity": "Person",
+                    "entity": PERSON,
                     "entity_id": person_id,
                     "interval": interval,
                     "value": _scalar_value(column[sorted_p_idx]),
@@ -547,7 +567,7 @@ def _build_ctc_request_bytes(
             inputs.append(
                 {
                     "name": full_id,
-                    "entity": "Person",
+                    "entity": PERSON,
                     "entity_id": person_id,
                     "interval": interval,
                     "value": _scalar_value(column[tu_idx]),
@@ -556,7 +576,7 @@ def _build_ctc_request_bytes(
         relations.append(
             {
                 "name": FED_CTC_RELATION_NAME,
-                "tuple": [person_id, tu_id],
+                "tuple": layout.tuple_for(owner_id=tu_id, member_id=person_id),
                 "interval": interval,
             }
         )
@@ -581,7 +601,11 @@ def _execute_ctc(
 ) -> dict[str, np.ndarray]:
     """Build a CompiledExecutionRequest for §24(h) and run it."""
     request_bytes = _build_ctc_request_bytes(
-        projection, period_year, output_names, cache_key=cache_key
+        projection,
+        period_year,
+        output_names,
+        cache_key=cache_key,
+        layout=_ctc_layout(artifact_path),
     )
 
     proc = subprocess.run(
@@ -662,7 +686,7 @@ def _execute_fed_income_tax(
             inputs.append(
                 {
                     "name": full_input_id,
-                    "entity": "TaxUnit",
+                    "entity": TAX_UNIT,
                     "entity_id": tu_id,
                     "interval": interval,
                     "value": _scalar_value(column[tu_idx]),
@@ -730,11 +754,14 @@ def _execute_compiled(
     cache_key: tuple | None = None,
 ) -> dict[str, np.ndarray]:
     output_ids = [DEFAULT_OUTPUT_IDS[n] for n in output_names]
+    layout = _co_snap_layout(artifact_path)
+    if cache_key is not None:
+        cache_key = (*cache_key, layout.slot_kinds)
     request_bytes: bytes
     if cache_key is not None and cache_key in _CO_SNAP_REQUEST_CACHE:
         request_bytes = _CO_SNAP_REQUEST_CACHE[cache_key]
     else:
-        request = _build_compiled_request(projection, period_year, output_ids)
+        request = _build_compiled_request(projection, period_year, output_ids, layout=layout)
         request_bytes = orjson.dumps(request)
         if cache_key is not None:
             _CO_SNAP_REQUEST_CACHE[cache_key] = request_bytes
@@ -746,7 +773,7 @@ def _execute_compiled(
     )
     if proc.returncode != 0 and b"missing input `snap_excess_shelter_deduction`" in proc.stderr:
         request_bytes = _build_co_snap_shelter_bridge_request_bytes(
-            projection, artifact_path, period_year, output_ids
+            projection, artifact_path, period_year, output_ids, layout=layout
         )
         if cache_key is not None:
             _CO_SNAP_REQUEST_CACHE[cache_key] = request_bytes
@@ -762,11 +789,19 @@ def _execute_compiled(
     return _collect_outputs(response, projection.n_households, output_names, id_to_name)
 
 
+def _co_snap_layout(artifact_path: Path) -> RelationLayout:
+    return relation_layout_for_artifact(
+        artifact_path, CO_SNAP_RELATION_NAME, owner_kind=HOUSEHOLD, member_kind=PERSON
+    )
+
+
 def _build_co_snap_shelter_bridge_request_bytes(
     projection: CoSnapProjection,
     artifact_path: Path,
     period_year: int,
     output_ids: list[str],
+    *,
+    layout: RelationLayout,
 ) -> bytes:
     """Bind CO's shelter deduction into the imported federal SNAP input.
 
@@ -777,7 +812,7 @@ def _build_co_snap_shelter_bridge_request_bytes(
     the federal input populated.
     """
     bridge_request = _build_compiled_request(
-        projection, period_year, [CO_SNAP_EXCESS_SHELTER_OUTPUT]
+        projection, period_year, [CO_SNAP_EXCESS_SHELTER_OUTPUT], layout=layout
     )
     bridge_proc = subprocess.run(
         [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
@@ -800,6 +835,7 @@ def _build_co_snap_shelter_bridge_request_bytes(
         period_year,
         output_ids,
         extra_household_inputs={FED_SNAP_EXCESS_SHELTER_INPUT: shelter},
+        layout=layout,
     )
     return orjson.dumps(request)
 
@@ -809,7 +845,11 @@ def _build_compiled_request(
     period_year: int,
     output_ids: list[str],
     extra_household_inputs: dict[str, np.ndarray] | None = None,
+    *,
+    layout: RelationLayout,
 ) -> dict:
+    """``layout`` is the tuple order read from the artifact the request runs against."""
+    _check_layout(layout, CO_SNAP_RELATION_NAME, HOUSEHOLD, PERSON)
     # SNAP is calculated monthly. Use January of the requested year as the
     # representative month — the run is interpreted as "what would each
     # household receive in this month under current rules."
@@ -837,9 +877,9 @@ def _build_compiled_request(
                 if slot.name in proj.household_inputs
                 else slot.default
             )
-            inputs.append(_input_record(_input_id(slot.name), "Household", hh_id, interval, value))
+            inputs.append(_input_record(_input_id(slot.name), HOUSEHOLD, hh_id, interval, value))
         for input_id, values in (extra_household_inputs or {}).items():
-            inputs.append(_input_record(input_id, "Household", hh_id, interval, values[h_idx]))
+            inputs.append(_input_record(input_id, HOUSEHOLD, hh_id, interval, values[h_idx]))
         queries.append(
             {
                 "entity_id": hh_id,
@@ -861,11 +901,11 @@ def _build_compiled_request(
                 if slot.name in proj.person_inputs
                 else slot.default
             )
-            inputs.append(_input_record(_input_id(slot.name), "Person", person_id, interval, value))
+            inputs.append(_input_record(_input_id(slot.name), PERSON, person_id, interval, value))
         relations.append(
             {
                 "name": CO_SNAP_RELATION_NAME,
-                "tuple": [person_id, hh_id],
+                "tuple": layout.tuple_for(owner_id=hh_id, member_id=person_id),
                 "interval": interval,
             }
         )
@@ -875,6 +915,19 @@ def _build_compiled_request(
         "dataset": {"inputs": inputs, "relations": relations},
         "queries": queries,
     }
+
+
+def _check_layout(layout: RelationLayout, relation: str, owner_kind: str, member_kind: str) -> None:
+    """The layout must describe this relation and the kinds the inputs are labelled with."""
+    if (layout.relation, layout.owner_kind, layout.member_kind) != (
+        relation,
+        owner_kind,
+        member_kind,
+    ):
+        raise ValueError(
+            f"tuple layout for {layout.relation!r} ({layout.owner_kind}, {layout.member_kind}) "
+            f"does not describe {relation!r} ({owner_kind}, {member_kind})"
+        )
 
 
 def _input_record(name: str, entity: str, entity_id: str, interval: dict, value) -> dict:

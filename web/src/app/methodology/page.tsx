@@ -14,7 +14,7 @@ export default function MethodologyPage() {
         </h1>
         <p className="editorial mt-5 max-w-3xl">
           Every aggregate on the runner page is the end of a six-step
-          pipeline: read the Enhanced CPS file, project its columns into
+          pipeline: read the pinned Populace file, project its columns into
           the input contract a RuleSpec module expects, batch every
           household or tax unit into a single engine call, decode the
           result, and weight it back to the population. This page
@@ -31,7 +31,7 @@ export default function MethodologyPage() {
         </p>
         <Pipeline />
         <p className="mt-5 text-sm text-ink-secondary">
-          The runtime imports zero PolicyEngine code. The Enhanced CPS{" "}
+          The runtime imports zero PolicyEngine code. The Populace{" "}
           <code className="font-mono text-xs text-accent">.h5</code> file
           is read with{" "}
           <code className="font-mono text-xs text-accent">h5py</code>{" "}
@@ -46,7 +46,7 @@ export default function MethodologyPage() {
         <ProgramSection key={p.id} program={p} />
       ))}
 
-      <Section eyebrow="ecps-source" title="ECPS source data — what we actually read">
+      <Section eyebrow="populace-source" title="Populace source data — what we actually read">
         <MethodologyEcpsPanel />
       </Section>
 
@@ -106,7 +106,7 @@ function ProgramSection({ program }: { program: ProgramMethodology }) {
       </div>
 
       <h3 className="mb-3 font-serif text-lg text-ink">
-        ECPS → Axiom input mapping
+        Populace → Axiom input mapping
       </h3>
       <div className="mb-8 overflow-x-auto rounded-md border border-rule">
         <table className="w-full min-w-[36rem] border-collapse text-sm">
@@ -114,7 +114,7 @@ function ProgramSection({ program }: { program: ProgramMethodology }) {
             <tr>
               <Th>Axiom slot</Th>
               <Th>Entity</Th>
-              <Th>ECPS source</Th>
+              <Th>Populace source</Th>
               <Th>Derivation</Th>
             </tr>
           </thead>
@@ -229,12 +229,12 @@ function Pipeline() {
     {
       eyebrow: "01",
       title: "Read",
-      body: "h5py opens enhanced_cps_2024.h5 and pulls only the columns the chosen program needs. State filter applied at this stage.",
+      body: "h5py opens populace_us_2024.h5 and pulls only the columns the chosen program needs. State filter applied at this stage.",
     },
     {
       eyebrow: "02",
       title: "Project",
-      body: "Per-program: ECPS columns → engine input slots, with the right entity grouping (Household for SNAP, TaxUnit for §1(j) and §24(h) CTC).",
+      body: "Per-program: Populace columns → engine input slots, with the right entity grouping (Household for SNAP, TaxUnit for §1(j) and §24(h) CTC).",
     },
     {
       eyebrow: "03",

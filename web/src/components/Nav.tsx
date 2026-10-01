@@ -12,7 +12,7 @@ export function Nav() {
             the runner. Two separate anchors — they can't nest. */}
         <div className="flex items-center gap-3">
           <a
-            href="https://axiom-foundation.org"
+            href="https://axiom.org"
             className="inline-flex w-[100px] shrink-0"
             aria-label="Axiom Foundation"
           >

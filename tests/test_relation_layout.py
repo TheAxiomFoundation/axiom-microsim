@@ -158,10 +158,43 @@ def test_explicit_versions_replace_the_base_expression() -> None:
     assert ctc_layout(_program(rule)).owner_slot == 0
 
 
-def test_relation_member_votes_with_the_enclosing_entity() -> None:
-    member = {"kind": "relation_member", "relation": R, "current_slot": 0, "related_slot": 1}
-    rule = {"name": "has", "entity": TAX_UNIT, "semantics": "judgment", "expr": member}
-    assert ctc_layout(_program(rule)).owner_slot == 0
+@pytest.mark.parametrize("declared", [None, [PERSON, TAX_UNIT]], ids=["untyped", "declared"])
+@pytest.mark.parametrize("site", ["judgment", "if-condition", "aggregate-where"])
+def test_relation_member_without_a_derived_predicate_context_is_ignored(declared, site) -> None:
+    # Membership cannot run at any of these sites: no derived relation binds
+    # its two ids. In particular, the rule's entity is not a membership kind.
+    current_slot = 1 if site == "aggregate-where" else 0
+    member = {
+        "kind": "relation_member",
+        "relation": R,
+        "current_slot": current_slot,
+        "related_slot": 1 - current_slot,
+    }
+    if site == "judgment":
+        expr = member
+    elif site == "if-condition":
+        expr = _indicator(member)
+    else:
+        expr = {
+            "kind": "count_related",
+            "relation": "claims",
+            "current_slot": 0,
+            "related_slot": 1,
+            "where": member,
+        }
+    rule = _rule("has", TAX_UNIT, expr)
+    if site == "judgment":
+        rule["semantics"] = "judgment"
+    claims = {"name": "claims", "arity": 2, "slot_entities": [TAX_UNIT, PERSON]}
+    program = _program(rule, declared=declared, extra_relations=[claims])
+    layout = ctc_layout(program)
+    assert (layout.owner_slot, layout.basis) == (1, "declared" if declared else "legacy")
+
+    # A real aggregation's vote also survives an invalid membership use with
+    # the opposite slots, instead of becoming a conflict.
+    member["current_slot"], member["related_slot"] = 1 - current_slot, current_slot
+    program["program"]["derived"].append(_rule("n", TAX_UNIT, _aggregate(0)))
+    assert (ctc_layout(program).owner_slot, ctc_layout(program).basis) == (0, "usage")
 
 
 def test_use_through_a_derived_relation_votes_on_its_source() -> None:
@@ -202,6 +235,40 @@ IS_CHILD = {
     "expr": {"kind": "derived", "name": "age_under_17"},
 }
 LITERAL_0 = {"kind": "literal", "value": {"kind": "integer", "value": 0}}
+LITERAL_1 = {"kind": "literal", "value": {"kind": "integer", "value": 1}}
+
+
+def _indicator(condition: dict) -> dict:
+    return {
+        "kind": "if",
+        "condition": condition,
+        "then_expr": LITERAL_1,
+        "else_expr": LITERAL_0,
+    }
+
+
+def _compare(left: dict, right: dict = LITERAL_1) -> dict:
+    return {"kind": "comparison", "left": left, "op": "eq", "right": right}
+
+
+def _derived_predicate_program(predicate: dict, *, declared: list[str]) -> dict:
+    claims = {"name": "claims", "arity": 2, "slot_entities": [TAX_UNIT, PERSON]}
+    derived_relation = {
+        "name": "d",
+        "arity": 2,
+        "derivation": {
+            "source_relation": "claims",
+            "current_slot": 0,
+            "related_slot": 1,
+            "entity": TAX_UNIT,
+            "slot_entities": [TAX_UNIT, PERSON],
+            "predicate": predicate,
+        },
+    }
+    over_d = {"kind": "count_related", "relation": "d", "current_slot": 0, "related_slot": 1}
+    return _program(
+        _rule("n", TAX_UNIT, over_d), declared=declared, extra_relations=[claims, derived_relation]
+    )
 
 
 def _units_with_children(outer_current_slot: int, inner: dict, *, outer_declared=None) -> dict:
@@ -246,20 +313,56 @@ def test_nested_use_in_an_untyped_relation_reads_its_predicate_entity() -> None:
     assert ctc_layout(program).owner_slot == 1
 
 
-@pytest.mark.parametrize("declared", [True, False], ids=["declared", "untyped"])
 @pytest.mark.parametrize("pinned_slot", [None, 0, 1], ids=["alone", "beside-0", "beside-1"])
-def test_a_use_that_pins_no_slot_raises(declared: bool, pinned_slot: int | None) -> None:
+def test_a_typed_use_that_pins_no_slot_raises(pinned_slot: int | None) -> None:
     # A bare count nested in an untyped relation's predicate: nothing says
     # which entity evaluates it. #179 re-orients only the uses whose entity it
     # can see, and a legacy compile puts whichever entity evaluates a use in
     # slot 1, so it may disagree with any pinned use, alone or not. Strict
     # binding cannot check it either.
     program = _units_with_children(1, _aggregate(1))
-    if not declared:
-        program["program"]["relations"][0].pop("slot_entities")
     if pinned_slot is not None:
         program["program"]["derived"].append(_rule("n", TAX_UNIT, _aggregate(pinned_slot)))
     with pytest.raises(ValueError, match=r"in \['units_with_children'\].*refusing to guess"):
+        ctc_layout(program)
+
+
+@pytest.mark.parametrize("pinned_slot", [None, 0, 1], ids=["alone", "beside-0", "beside-1"])
+def test_unpinned_untyped_use_preserves_compatible_legacy_order(pinned_slot: int | None) -> None:
+    # Older untyped compiles can execute a nested count whose evaluating
+    # entity is unknown to inference. That uncertainty is no contrary vote.
+    program = _units_with_children(1, _aggregate(1))
+    program["program"]["relations"][0].pop("slot_entities")
+    if pinned_slot is not None:
+        program["program"]["derived"].append(_rule("n", TAX_UNIT, _aggregate(pinned_slot)))
+    if pinned_slot == 0:
+        # Unknown nested uses may still need legacy order. A known reversed
+        # use prevents the compatibility fallback from resolving all uses.
+        with pytest.raises(ValueError, match=r"in \['units_with_children'\].*refusing to guess"):
+            ctc_layout(program)
+        return
+    layout = ctc_layout(program)
+    assert (layout.owner_slot, layout.basis) == (
+        LEGACY_OWNER_SLOT,
+        "legacy" if pinned_slot is None else "usage",
+    )
+
+
+def test_unpinned_untyped_use_does_not_override_conflicting_known_votes() -> None:
+    program = _units_with_children(1, _aggregate(1))
+    program["program"]["relations"][0].pop("slot_entities")
+    program["program"]["derived"].extend(
+        [_rule("a", TAX_UNIT, _aggregate(0)), _rule("b", TAX_UNIT, _aggregate(1))]
+    )
+    with pytest.raises(ValueError, match="no tuple order is right for every use"):
+        ctc_layout(program)
+
+
+def test_unpinned_untyped_use_does_not_hide_an_incompatible_known_entity() -> None:
+    program = _units_with_children(1, _aggregate(1))
+    program["program"]["relations"][0].pop("slot_entities")
+    program["program"]["derived"].append(_rule("foreign", HOUSEHOLD, _aggregate(0)))
+    with pytest.raises(ValueError, match="no use puts a TaxUnit or Person"):
         ctc_layout(program)
 
 
@@ -289,31 +392,93 @@ def test_a_derived_relations_own_definition_is_not_an_unpinned_use() -> None:
     assert (layout.owner_slot, layout.basis) == (1, "usage")
 
 
-def test_relation_member_under_a_comparison_drops_the_derived_relation_context() -> None:
-    # In a derived relation's predicate, `and`/`or`/`not` keep the relation's
-    # (current, related) kinds; a comparison resets them, so the membership
-    # test runs on the related (Person) id.
-    member = {"kind": "relation_member", "relation": R, "current_slot": 0, "related_slot": 1}
-    one = {"kind": "literal", "value": {"kind": "integer", "value": 1}}
-    branch = {"kind": "if", "condition": member, "then_expr": one, "else_expr": LITERAL_0}
-    derived_relation = {
-        "name": "d",
-        "arity": 2,
-        "derivation": {
-            "source_relation": "claims",
-            "current_slot": 0,
-            "related_slot": 1,
-            "entity": TAX_UNIT,
-            "slot_entities": [TAX_UNIT, PERSON],
-            "predicate": {"kind": "comparison", "left": branch, "op": "eq", "right": one},
-        },
+@pytest.mark.parametrize("current_slot", [0, 1])
+@pytest.mark.parametrize(
+    "wrapper",
+    [
+        "direct",
+        "if-condition",
+        "arithmetic",
+        "then-branch",
+        "else-branch",
+        "combinators",
+        "unary",
+        "no-match-subject",
+    ],
+)
+def test_relation_member_keeps_derived_context_through_scalar_and_judgment_operands(
+    current_slot: int, wrapper: str
+) -> None:
+    # Both orders are tested against the opposite declaration. Keeping the
+    # binding must determine the layout instead of falling back to that order.
+    member = {
+        "kind": "relation_member",
+        "relation": R,
+        "current_slot": current_slot,
+        "related_slot": 1 - current_slot,
     }
-    claims = {"name": "claims", "arity": 2, "slot_entities": [TAX_UNIT, PERSON]}
-    program = _program(declared=[TAX_UNIT, PERSON], extra_relations=[claims, derived_relation])
-    assert ctc_layout(program).owner_slot == 1
+    indicator = _indicator(member)
+    predicates = {
+        "direct": member,
+        "if-condition": _compare(indicator),
+        "arithmetic": _compare({"kind": "add", "items": [LITERAL_0, indicator]}),
+        "then-branch": _compare(
+            {
+                "kind": "if",
+                "condition": _compare(LITERAL_1),
+                "then_expr": indicator,
+                "else_expr": LITERAL_0,
+            }
+        ),
+        "else-branch": _compare(
+            {
+                "kind": "if",
+                "condition": _compare(LITERAL_0),
+                "then_expr": LITERAL_0,
+                "else_expr": indicator,
+            }
+        ),
+        "combinators": {
+            "kind": "or",
+            "items": [{"kind": "and", "items": [{"kind": "not", "item": member}]}],
+        },
+        "unary": _compare(
+            {"kind": "ceil", "value": {"kind": "floor", "value": indicator}}, LITERAL_1
+        ),
+        "no-match-subject": _compare(
+            {"kind": "no_match", "subject": indicator, "patterns": [LITERAL_0]}
+        ),
+    }
+    declared = [PERSON, TAX_UNIT] if current_slot == 0 else [TAX_UNIT, PERSON]
+    layout = ctc_layout(_derived_predicate_program(predicates[wrapper], declared=declared))
+    assert (layout.owner_slot, layout.basis) == (current_slot, "usage")
 
-    derived_relation["derivation"]["predicate"] = {"kind": "and", "items": [member]}
-    assert ctc_layout(program).owner_slot == 0
+
+@pytest.mark.parametrize("aggregate_kind", ["count_related", "sum_related"])
+def test_nested_aggregate_where_drops_the_derived_membership_context(aggregate_kind) -> None:
+    member = {"kind": "relation_member", "relation": R, "current_slot": 0, "related_slot": 1}
+    aggregate = {
+        "kind": aggregate_kind,
+        "relation": "claims",
+        "current_slot": 1,
+        "related_slot": 0,
+        "where": member,
+    }
+    if aggregate_kind == "sum_related":
+        aggregate["value"] = {"kind": "input", "name": "amount"}
+    program = _derived_predicate_program(_compare(aggregate), declared=[PERSON, TAX_UNIT])
+    layout = ctc_layout(program)
+    assert (layout.owner_slot, layout.basis) == (1, "declared")
+
+
+@pytest.mark.parametrize("operand", ["value", "n"])
+def test_over_periods_operands_drop_the_derived_membership_context(operand) -> None:
+    member = {"kind": "relation_member", "relation": R, "current_slot": 0, "related_slot": 1}
+    reduction = {"kind": "over_periods", "value": LITERAL_1, "n": LITERAL_1}
+    reduction[operand] = _indicator(member)
+    program = _derived_predicate_program(_compare(reduction), declared=[PERSON, TAX_UNIT])
+    layout = ctc_layout(program)
+    assert (layout.owner_slot, layout.basis) == (1, "declared")
 
 
 def test_related_slot_kind_comes_from_the_value_rule_entity() -> None:
@@ -430,6 +595,91 @@ def test_only_an_evaluated_derived_relations_predicate_counts() -> None:
 
     over_d = {"kind": "count_related", "relation": "d", "current_slot": 1, "related_slot": 0}
     program["program"]["derived"].append(_rule("m", HOUSEHOLD, over_d))
+    with pytest.raises(ValueError, match=r"in \['d'\].*refusing to guess"):
+        ctc_layout(program)
+
+
+@pytest.mark.parametrize("subject_slot", [0, 1])
+def test_no_match_only_its_executable_subject_votes(subject_slot: int) -> None:
+    # Patterns describe the error and never execute, even when they contain
+    # an aggregation with the opposite orientation.
+    expr = {
+        "kind": "no_match",
+        "subject": _aggregate(subject_slot),
+        "patterns": [_aggregate(1 - subject_slot)],
+    }
+    layout = ctc_layout(_program(_rule("guard", TAX_UNIT, expr), declared=[TAX_UNIT, PERSON]))
+    assert (layout.owner_slot, layout.basis) == (subject_slot, "usage")
+
+
+def test_no_match_patterns_do_not_make_a_derived_relations_predicate_live() -> None:
+    member = {"kind": "relation_member", "relation": R, "current_slot": 1, "related_slot": 0}
+    derived_relation = {
+        "name": "d",
+        "arity": 2,
+        "derivation": {
+            "source_relation": TUH,
+            "current_slot": 1,
+            "related_slot": 0,
+            "predicate": member,
+        },
+    }
+    over_d = {"kind": "count_related", "relation": "d", "current_slot": 1, "related_slot": 0}
+    error = {"kind": "no_match", "subject": LITERAL_0, "patterns": [over_d]}
+    program = _program(
+        _rule("n", TAX_UNIT, _aggregate(0)),
+        _rule("guard", HOUSEHOLD, error),
+        declared=[TAX_UNIT, PERSON],
+        extra_relations=[{"name": TUH, "arity": 2}, derived_relation],
+    )
+    assert (ctc_layout(program).owner_slot, ctc_layout(program).basis) == (0, "usage")
+
+    # Moving the same expression into the subject executes d's predicate;
+    # its valid membership context now supplies an unpinned typed use.
+    error["subject"] = over_d
+    with pytest.raises(ValueError, match=r"in \['d'\].*refusing to guess"):
+        ctc_layout(program)
+
+
+def test_out_of_context_membership_does_not_make_a_derived_relations_predicate_live() -> None:
+    derived_relation = {
+        "name": "d",
+        "arity": 2,
+        "derivation": {
+            "source_relation": TUH,
+            "current_slot": 1,
+            "related_slot": 0,
+            "predicate": {
+                "kind": "relation_member",
+                "relation": R,
+                "current_slot": 1,
+                "related_slot": 0,
+            },
+        },
+    }
+    outside_member = {
+        "kind": "relation_member",
+        "relation": "d",
+        "current_slot": 1,
+        "related_slot": 0,
+    }
+    guard = _rule("guard", HOUSEHOLD, _indicator(outside_member))
+    program = _program(
+        _rule("n", TAX_UNIT, _aggregate(0)),
+        guard,
+        declared=[TAX_UNIT, PERSON],
+        extra_relations=[{"name": TUH, "arity": 2}, derived_relation],
+    )
+    assert (ctc_layout(program).owner_slot, ctc_layout(program).basis) == (0, "usage")
+
+    # A count can actually evaluate d, so its predicate's unpinned use of R
+    # is now relevant even though the invalid membership test was ignored.
+    guard["expr"] = {
+        "kind": "count_related",
+        "relation": "d",
+        "current_slot": 1,
+        "related_slot": 0,
+    }
     with pytest.raises(ValueError, match=r"in \['d'\].*refusing to guess"):
         ctc_layout(program)
 

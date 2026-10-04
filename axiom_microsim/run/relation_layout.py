@@ -20,7 +20,10 @@ uses (``docs/rulespec.md``, "Compiled artifacts carry declared argument kinds";
 1. Executable usage decides for a relation the program uses. Each
    ``count_related``, ``sum_related`` or ``relation_member`` node on the
    relation, directly or through a derived relation whose source it is, puts
-   its evaluating entity in its ``current_slot``. That entity is the enclosing
+   its evaluating entity in its ``current_slot``. Membership only contributes
+   inside a derived relation's predicate, using its bound (current, related)
+   ids. Scalar operands preserve that binding; nested aggregate predicates
+   and period reductions clear it. The aggregating entity is the enclosing
    rule's, or the related entity of the aggregate whose predicate contains
    the node. The entity of the derived rules its value and predicate read goes
    in its ``related_slot``. The declared kinds fill a single slot left unknown.
@@ -35,13 +38,16 @@ engine would run, or fail less clearly:
 
 * Uses that disagree about the owner's slot. The engine skips the conflicting
   slots, and some output is wrong under either order.
-* A use that pins neither slot, such as a count nested in an untyped
-  relation's predicate with no ``where``. #179 re-orients only the uses whose
-  entity it can see, and a legacy compile puts whichever entity evaluates a
+* A use that pins neither slot, unless the relation is untyped and its known
+  uses permit legacy order. For example, a count nested in an untyped relation's
+  predicate with no ``where``. #179 re-orients only the uses whose entity it
+  can see, and a legacy compile puts whichever entity evaluates a
   use in slot 1, so it may disagree with the other uses. Strict binding cannot
   check it either. A derived relation's own definition is not such a use (the
   aggregates over it are), nor is the predicate of a derived relation nothing
-  evaluates.
+  evaluates. Untyped relations preserve the legacy direction when known uses
+  agree with it or supply no orientation; an unpinned use alone does not
+  disprove the working legacy order.
 * A relation evaluated only by uses that put neither the owner's nor the
   member's kind in any slot. No order of these ids serves them.
 """
@@ -59,9 +65,6 @@ import orjson
 LEGACY_OWNER_SLOT = 1
 
 _AGGREGATES = ("count_related", "sum_related")
-# Judgment combinators keep a derived relation's (current, related) context;
-# every other node drops it (engine: collect_judgment_relation_usages).
-_COMBINATORS = ("and", "or", "not", "exactly_one")
 # Derived rules of this entity have no per-entity kind (engine: SCALAR_ENTITY).
 _SCALAR_ENTITY = "Scalar"
 
@@ -135,7 +138,9 @@ def relation_layout(
             f"slot 0 (in {sorted(votes[0])}) and in slot 1 (in {sorted(votes[1])}); "
             "no tuple order is right for every use"
         )
-    if uses.unpinned:
+    # Preserve old untyped requests only when known uses permit legacy order.
+    # An unpinned nested use can conflict with a known nonlegacy orientation.
+    if uses.unpinned and (declared or 1 - LEGACY_OWNER_SLOT in votes):
         raise ValueError(
             f"compiled artifact uses relation {name!r} in {sorted(uses.unpinned)} without "
             f"showing which slot holds the {owner_kind} id, and strict binding cannot check "
@@ -144,6 +149,8 @@ def relation_layout(
     if votes:
         (owner_slot,) = votes
         return RelationLayout(relation, owner_kind, member_kind, owner_slot, "usage", declared)
+    if uses.unpinned and not any(uses.slot_kinds):
+        return RelationLayout(relation, owner_kind, member_kind, LEGACY_OWNER_SLOT, "legacy")
     if uses.evaluated:
         raise ValueError(
             f"compiled artifact uses relation {name!r} in {sorted(uses.evaluated)}, but no use "
@@ -295,7 +302,12 @@ def _executable_slot_kinds(
             visit(node.get("where"), _at(slots, node["related_slot"]), None, citing, evaluates)
             return
         if kind == "relation_member":
-            current, related = relation_context or (entity, None)
+            # Membership needs the two ids bound by a derived predicate.
+            # Outside it the evaluator rejects the test, so no orientation
+            # follows from the enclosing entity alone.
+            if relation_context is None:
+                return
+            current, related = relation_context
             add_usage(
                 node["relation"],
                 node["current_slot"],
@@ -306,10 +318,19 @@ def _executable_slot_kinds(
                 evaluates=evaluates,
             )
             return
-        # Only judgment combinators pass a derived relation's context down.
-        keep = relation_context if kind in _COMBINATORS else None
+        if kind == "no_match":
+            # Patterns label an error; only the subject is evaluated.
+            visit(node.get("subject"), entity, relation_context, citing, evaluates)
+            return
+        if kind == "over_periods":
+            # Period reductions never execute in a derived predicate's context.
+            visit(node.get("value"), entity, None, citing, evaluates)
+            visit(node.get("n"), entity, None, citing, evaluates)
+            return
+        # Scalar operands, comparisons and judgment combinators all keep
+        # the same pair of bound ids (engine: collect_*_relation_usages).
         for value in node.values():
-            visit(value, entity, keep, citing, evaluates)
+            visit(value, entity, relation_context, citing, evaluates)
 
     for rule in program.get("derived") or []:
         citing = rule.get("id") or rule["name"]
@@ -358,23 +379,37 @@ def _evaluated_relations(program: Mapping[str, Any], relations: Mapping[str, Any
         if not derivation:
             continue
         reached = {derivation["source_relation"]}
-        _referenced_relations(derivation.get("predicate"), reached)
+        _referenced_relations(derivation.get("predicate"), reached, relation_context=True)
         frontier.extend(reached - live)
         live |= reached
     return live
 
 
-def _referenced_relations(node: Any, out: set[str]) -> None:
+def _referenced_relations(node: Any, out: set[str], *, relation_context: bool = False) -> None:
     if isinstance(node, list):
         for item in node:
-            _referenced_relations(item, out)
+            _referenced_relations(item, out, relation_context=relation_context)
         return
     if not isinstance(node, dict):
         return
-    if node.get("kind") in (*_AGGREGATES, "relation_member"):
+    kind = node.get("kind")
+    if kind in _AGGREGATES:
         out.add(node["relation"])
+        _referenced_relations(node.get("where"), out)
+        return
+    if kind == "relation_member":
+        if relation_context:
+            out.add(node["relation"])
+        return
+    if kind == "no_match":
+        _referenced_relations(node.get("subject"), out, relation_context=relation_context)
+        return
+    if kind == "over_periods":
+        _referenced_relations(node.get("value"), out)
+        _referenced_relations(node.get("n"), out)
+        return
     for value in node.values():
-        _referenced_relations(value, out)
+        _referenced_relations(value, out, relation_context=relation_context)
 
 
 def _referenced_entities(node: Any, derived_entity: Mapping[str, Any], out: set[str]) -> None:
@@ -393,6 +428,8 @@ def _referenced_entities(node: Any, derived_entity: Mapping[str, Any], out: set[
         if entity is not None and entity != _SCALAR_ENTITY:
             out.add(entity)
         return
+    # This separate entity-reference inference also inspects no_match patterns,
+    # matching the reference; executable usage and liveness visit only subject.
     for value in node.values():
         _referenced_entities(value, derived_entity, out)
 

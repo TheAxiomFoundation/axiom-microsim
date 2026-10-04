@@ -406,12 +406,14 @@ def _reference(households, uses) -> dict[tuple[str, str], float]:
     return {key: float(value) for key, value in out.items()}
 
 
-def _run_inline(program, dataset, reference) -> tuple[subprocess.CompletedProcess, dict | None]:
+def _run_inline(
+    program, dataset, reference, *, mode: str = "fast"
+) -> tuple[subprocess.CompletedProcess, dict | None]:
     queries = {}
     for entity_id, output in reference:
         queries.setdefault(entity_id, []).append(output)
     request = {
-        "mode": "fast",
+        "mode": mode,
         "program": program,
         "dataset": dataset,
         "queries": [
@@ -434,8 +436,9 @@ def _run_inline(program, dataset, reference) -> tuple[subprocess.CompletedProces
 def test_the_producers_order_is_the_one_the_engine_computes_correctly(generated, households):
     """If the producer picks an order, the engine binds it and every output is right.
 
-    If it refuses because uses disagree, no order gets every output right. If it
-    refuses because a use pins no slot, that use is exactly the unpinned one.
+    If it refuses because uses disagree, no order gets every output right. A
+    typed use that pins no slot is refused; an untyped artifact keeps its legacy
+    order and is checked against the engine just like any other accepted layout.
     """
     program, household_slot, uses, unpinned = generated
     reference = _reference(households, uses)
@@ -458,7 +461,9 @@ def test_the_producers_order_is_the_one_the_engine_computes_correctly(generated,
         return
 
     event(f"layout from {layout.basis}")
-    assert not unpinned
+    if unpinned:
+        dep = next(relation for relation in program["relations"] if relation["name"] == DEP)
+        assert not dep.get("slot_entities") and layout.owner_slot == 1
     proc, got = outputs(layout.owner_slot)
     assert proc.returncode == 0, proc.stderr.decode()[:800]
     assert b"relation_slot_entity_mismatch" not in proc.stderr
@@ -471,7 +476,8 @@ def test_the_producers_order_is_the_one_the_engine_computes_correctly(generated,
 # engine exposes its result: send ``dep`` a tuple of ids of a kind no program
 # mentions, and it names the kind it expected in every slot it knows. The
 # generated programs cover every expression kind the port walks, derived
-# relations (chained, self-sourced, alias entities), Scalar rules and versions.
+# relations (chained, alias entities), Scalar rules and versions. Dependencies
+# stay acyclic so compilation reaches the binding check used as the oracle.
 
 SENTINEL = "Sentinel"
 EXPECTED_SLOT = re.compile(
@@ -510,7 +516,18 @@ def probe_programs(draw):
     def scalar(depth: int) -> dict:
         kinds = ["literal", "input", "ref"]
         if depth > 0:
-            kinds += ["add", "sub", "max", "ceil", "if", "over", "lookup", "count", "sum"]
+            kinds += [
+                "add",
+                "sub",
+                "max",
+                "ceil",
+                "if",
+                "no_match",
+                "over",
+                "lookup",
+                "count",
+                "sum",
+            ]
         kind = draw(st.sampled_from(kinds))
         if kind == "literal":
             return _lit(draw(st.integers(0, 3)))
@@ -542,6 +559,12 @@ def probe_programs(draw):
                 "condition": judgment(depth - 1),
                 "then_expr": scalar(depth - 1),
                 "else_expr": scalar(depth - 1),
+            }
+        if kind == "no_match":
+            return {
+                "kind": "no_match",
+                "subject": scalar(depth - 1),
+                "patterns": [scalar(depth - 1)],
             }
         if kind == "over":
             return {"kind": "over_periods", "over": "sum", "value": scalar(depth - 1)}
@@ -602,11 +625,10 @@ def probe_programs(draw):
     if tuh_declared:
         relations[1]["slot_entities"] = tuh_declared
     derived_names = [f"d{i}" for i in range(draw(st.sampled_from([0, 1, 1, 2])))]
-    relations_used += derived_names
     for name in derived_names:
         current, related = slots()
         derivation = {
-            "source_relation": draw(st.sampled_from(["dep", "dep", "dep", "tuh", *derived_names])),
+            "source_relation": draw(st.sampled_from(["dep", "dep", *relations_used])),
             "current_slot": current,
             "related_slot": related,
             "predicate": judgment(draw(st.integers(0, 2))),
@@ -620,6 +642,7 @@ def probe_programs(draw):
         if kinds:
             derivation["slot_entities"] = kinds
         relations.append({"name": name, "arity": 2, "derivation": derivation})
+        relations_used.append(name)
     rules = list(PROBE_RULES)
     for i in range(draw(st.integers(1, 3))):
         entity = draw(st.sampled_from([TU, TU, P, HH, "Scalar"]))
@@ -759,3 +782,274 @@ def test_inference_and_layout_agree_with_the_engine_on_review_counterexamples(na
 
     layout = relation_layout({"program": program}, "dep", owner_kind=TU, member_kind=P)
     assert layout.slot_kinds == tuple(expected)
+
+
+def _compare(left: dict, op: str, right: dict) -> dict:
+    return {"kind": "comparison", "left": left, "op": op, "right": right}
+
+
+def _constant(holds: bool) -> dict:
+    return _compare(_lit(1), "eq" if holds else "ne", _lit(1))
+
+
+def _indicator(condition: dict) -> dict:
+    return {"kind": "if", "condition": condition, "then_expr": _lit(1), "else_expr": _lit(0)}
+
+
+def _membership_predicates(current_slot: int) -> dict[str, dict]:
+    member = {
+        "kind": "relation_member",
+        "relation": DEP,
+        "current_slot": current_slot,
+        "related_slot": 1 - current_slot,
+    }
+    scalar = _indicator(member)
+    return {
+        "direct": member,
+        "if-condition-in-comparison": _compare(scalar, "eq", _lit(1)),
+        "comparison-right-operand": _compare(_lit(1), "eq", scalar),
+        "if-then-branch": _compare(
+            {
+                "kind": "if",
+                "condition": _constant(True),
+                "then_expr": scalar,
+                "else_expr": _lit(0),
+            },
+            "eq",
+            _lit(1),
+        ),
+        "if-else-branch": _compare(
+            {
+                "kind": "if",
+                "condition": _constant(False),
+                "then_expr": _lit(0),
+                "else_expr": scalar,
+            },
+            "eq",
+            _lit(1),
+        ),
+        "add": _compare({"kind": "add", "items": [scalar, _lit(0)]}, "eq", _lit(1)),
+        "sub-mul-div": _compare(
+            {
+                "kind": "sub",
+                "left": {
+                    "kind": "div",
+                    "left": {"kind": "mul", "left": scalar, "right": _lit(1)},
+                    "right": _lit(1),
+                },
+                "right": _lit(0),
+            },
+            "eq",
+            _lit(1),
+        ),
+        "max-min-ceil-floor": _compare(
+            {
+                "kind": "max",
+                "items": [
+                    _lit(0),
+                    {
+                        "kind": "min",
+                        "items": [
+                            _lit(1),
+                            {"kind": "ceil", "value": {"kind": "floor", "value": scalar}},
+                        ],
+                    },
+                ],
+            },
+            "eq",
+            _lit(1),
+        ),
+        "and-or-not": {
+            "kind": "or",
+            "items": [
+                _constant(False),
+                {
+                    "kind": "and",
+                    "items": [
+                        _constant(True),
+                        {"kind": "not", "item": {"kind": "not", "item": member}},
+                    ],
+                },
+            ],
+        },
+    }
+
+
+@pytest.mark.parametrize("wrapper", sorted(_membership_predicates(0)))
+@pytest.mark.parametrize("current_slot", [0, 1])
+@pytest.mark.parametrize("mode", ["fast", "explain"])
+def test_membership_context_and_producer_order_match_engine_execution(
+    wrapper: str, current_slot: int, mode: str
+) -> None:
+    """Every context-preserving wrapper consumes exactly the inferred order."""
+    if not _strict_engine():
+        pytest.skip("needs the strict relation binding of axiom-rules-engine#190")
+    program = _member_under_if_in_a_predicate()
+    program["relations"][2]["derivation"]["predicate"] = _membership_predicates(current_slot)[
+        wrapper
+    ]
+    relations = {relation["name"]: relation for relation in program["relations"]}
+    uses = _executable_slot_kinds(program, relations, DEP)
+    inferred = [next(iter(kinds)) if len(kinds) == 1 else None for kinds in uses.slot_kinds]
+    assert inferred == _engine_expected_kinds(program)
+
+    layout = relation_layout({"program": program}, DEP, owner_kind=TU, member_kind=P)
+    assert layout.owner_slot == current_slot
+    dataset = _inline_dataset([[[5]]], layout.owner_slot, None)
+    dataset["relations"].append({"name": "claims", "tuple": ["tu0", "p0"], "interval": IV})
+    reference = {("tu0", "n_d"): 1.0}
+    proc, got = _run_inline(program, dataset, reference, mode=mode)
+    assert proc.returncode == 0, proc.stderr.decode()[:800]
+    assert got == reference
+
+    dataset["relations"][0]["tuple"] = _flipped(layout).tuple_for("tu0", "p0")
+    proc, _ = _run_inline(program, dataset, reference, mode=mode)
+    assert proc.returncode != 0
+    assert b"strict dataset relation entity validation failed" in proc.stderr
+
+
+@pytest.mark.parametrize("scope", ["rule", "rule-if", "rule-where", "predicate-where"])
+def test_out_of_context_membership_implies_no_orientation(scope: str) -> None:
+    """Explain rejects these sites; strict binding keeps dep's declared order."""
+    if not _strict_engine():
+        pytest.skip("needs the strict relation binding of axiom-rules-engine#190")
+    program = _member_under_if_in_a_predicate()
+    derivation = program["relations"][2]["derivation"]
+    derivation["predicate"] = _constant(True)
+    member = {"kind": "relation_member", "relation": DEP, "current_slot": 1, "related_slot": 0}
+    output = "invalid_member"
+    if scope == "predicate-where":
+        derivation["predicate"] = _compare(_count("claims", 1, member), "gt", _lit(0))
+        output = "n_d"
+    else:
+        expression = {
+            "rule": member,
+            "rule-if": _indicator(member),
+            "rule-where": _count("claims", 0, member),
+        }[scope]
+        program["derived"].append(_prog_rule(output, TU, expression, judgment=scope == "rule"))
+    relations = {relation["name"]: relation for relation in program["relations"]}
+    uses = _executable_slot_kinds(program, relations, DEP)
+    assert not uses.recorded and not any(uses.slot_kinds)
+    assert _engine_expected_kinds(program) == [TU, P]
+    layout = relation_layout({"program": program}, DEP, owner_kind=TU, member_kind=P)
+    assert layout.basis == "declared" and layout.owner_slot == 0
+
+    dataset = _inline_dataset([[[5]]], layout.owner_slot, None)
+    dataset["relations"].append({"name": "claims", "tuple": ["tu0", "p0"], "interval": IV})
+    proc, _ = _run_inline(program, dataset, {("tu0", output): 1.0}, mode="explain")
+    assert proc.returncode != 0
+    assert (
+        b"relation predicate `dep` can only be evaluated inside a derived relation" in proc.stderr
+    )
+    assert b"strict dataset relation entity validation failed" not in proc.stderr
+
+
+def test_untyped_unpinned_nested_count_keeps_the_working_legacy_request(tmp_path: Path) -> None:
+    """The review's v0.1.1 artifact counts 1 with the unchanged legacy request."""
+    relation = M.FED_CTC_RELATION_NAME
+    nested = _compare(_count(relation, 1), "eq", _lit(0))
+    rule = _prog_rule(MAXIMUM, TU, _count(relation, 1, nested))
+    rule["id"] = M.FED_CTC_OUTPUT_IDS[MAXIMUM]
+    artifact = {
+        "artifact_format_version": 2,
+        "engine_version": "0.1.1",
+        "program": {"relations": [{"name": relation, "arity": 2}], "derived": [rule]},
+        "metadata": {
+            "evaluation_order": [MAXIMUM],
+            "fast_path": {"strategy": "generic_bulk", "compatible": True, "blockers": []},
+        },
+    }
+    path = write_artifact(tmp_path, "untyped-nested-ctc.json", artifact)
+    projection = FedCtcProjection(
+        n_tax_units=1,
+        n_persons=1,
+        period_year=2026,
+        tax_unit_weight=np.ones(1),
+        tax_unit_inputs={},
+        person_inputs={},
+        person_sort=np.array([0]),
+        relation_offsets=np.array([0, 1]),
+        qualifying_children_per_tu=np.array([1]),
+        other_dependents_per_tu=np.array([0]),
+        filing_status=np.array([0]),
+    )
+    legacy = RelationLayout.legacy(relation, owner_kind=TU, member_kind=P)
+    request = _build_ctc_request_bytes(projection, 2026, (MAXIMUM,), layout=_layout(path))
+    assert request == _build_ctc_request_bytes(projection, 2026, (MAXIMUM,), layout=legacy)
+    assert orjson.loads(request)["dataset"]["relations"][0]["tuple"] == ["p0", "tu0"]
+    proc = _run(path, request)
+    assert proc.returncode == 0, proc.stderr.decode()[:800]
+    assert _outputs(proc.stdout) == {MAXIMUM: 1.0}
+    np.testing.assert_array_equal(M._execute_ctc(projection, path, 2026, (MAXIMUM,))[MAXIMUM], [1])
+
+    wrong = _build_ctc_request_bytes(projection, 2026, (MAXIMUM,), layout=_flipped(legacy))
+    proc = _run(path, wrong)
+    assert proc.returncode == 0, proc.stderr.decode()[:800]
+    assert _outputs(proc.stdout) == {MAXIMUM: 0.0}
+
+
+def test_untyped_unpinned_use_cannot_override_an_incompatible_member_side_use() -> None:
+    """Neither order serves both known member-side and unknown nested uses."""
+    program = {
+        "relations": [{"name": DEP, "arity": 2}, {"name": TUH, "arity": 2}],
+        "derived": [
+            *BASE_RULES,
+            _prog_rule("n_units", P, _count(DEP, 1)),
+            _prog_rule("units", HH, _count(TUH, 1, _compare(_count(DEP, 1), "gt", _lit(0)))),
+        ],
+    }
+    with pytest.raises(ValueError, match="without showing"):
+        relation_layout({"program": program}, DEP, owner_kind=TU, member_kind=P)
+
+    households = [[[5]]]
+    reference = _reference(households, {"n_units", "units"})
+    observed = []
+    for owner_slot in (0, 1):
+        proc, got = _run_inline(program, _inline_dataset(households, owner_slot, 1), reference)
+        assert proc.returncode == 0, proc.stderr.decode()[:800]
+        assert got != reference
+        observed.append(got)
+    assert observed == [
+        {("p0", "n_units"): 1.0, ("h0", "units"): 0.0},
+        {("p0", "n_units"): 0.0, ("h0", "units"): 1.0},
+    ]
+
+
+@pytest.mark.parametrize("subject_has_use", [False, True])
+def test_no_match_subject_is_executable_but_its_patterns_are_labels(subject_has_use: bool) -> None:
+    """An opposite-order error label never vetoes the order the engine uses."""
+    if not _strict_engine():
+        pytest.skip("needs the strict relation binding of axiom-rules-engine#190")
+    no_match = {
+        "kind": "no_match",
+        "subject": _count(DEP, 1) if subject_has_use else _lit(0),
+        "patterns": [_count(DEP, 0)],
+    }
+    guard = {
+        "kind": "if",
+        "condition": _constant(True),
+        "then_expr": _lit(1),
+        "else_expr": no_match,
+    }
+    program = {
+        "relations": [{"name": DEP, "arity": 2, "slot_entities": [TU, P]}],
+        "derived": [
+            *PROBE_RULES,
+            _prog_rule("n", TU, _lit(1) if subject_has_use else _count(DEP, 1)),
+            _prog_rule("guard", TU, guard),
+        ],
+    }
+    relations = {relation["name"]: relation for relation in program["relations"]}
+    uses = _executable_slot_kinds(program, relations, DEP)
+    inferred = [next(iter(kinds)) if len(kinds) == 1 else None for kinds in uses.slot_kinds]
+    assert inferred == _engine_expected_kinds(program) == [P, TU]
+    layout = relation_layout({"program": program}, DEP, owner_kind=TU, member_kind=P)
+    assert layout.owner_slot == 1
+    reference = {("tu0", "n"): 1.0, ("tu0", "guard"): 1.0}
+    proc, got = _run_inline(program, _inline_dataset([[[5]]], 1, None), reference)
+    assert proc.returncode == 0, proc.stderr.decode()[:800]
+    assert got == reference
+    proc, _ = _run_inline(program, _inline_dataset([[[5]]], 0, None), reference)
+    assert proc.returncode != 0
+    assert b"strict dataset relation entity validation failed" in proc.stderr

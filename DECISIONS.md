@@ -92,14 +92,21 @@ CTC, `member_of_household` for CO SNAP) are ordered by the compiled
 artifact the request runs against, not by the producer.
 `axiom_microsim/run/relation_layout.py` reads the order. It ports the
 engine's own inference (`relation_usage_records`, axiom-rules-engine#190).
-Each `count_related`, `sum_related` or `relation_member` node on the relation
-puts its evaluating entity in its `current_slot`. That holds directly or
-through a derived relation. The entity of the rules its value and predicate
-read goes in its `related_slot`. The owner goes wherever those kinds place it.
+Each `count_related` or `sum_related` node on the relation puts its evaluating
+entity in its `current_slot`. That holds directly or through a derived relation.
+`relation_member` uses only the two ids bound by a derived relation's predicate;
+scalar operands, comparisons, `if` conditions and branches, and arithmetic
+preserve that context. Nested aggregate filters and period reductions clear it.
+Membership outside that context implies no orientation. Only `no_match.subject`
+is an executable use; its patterns label errors. The entity of the rules its
+value and predicate read goes in its `related_slot`. The owner goes wherever
+those kinds place it.
 The declared `slot_entities` decide only for a relation the program never
 evaluates. With neither, the legacy slot 1 applies. Uses that disagree, or a
-use that pins no slot, raise rather than guess. Input records carry their real
-entity kinds (`TaxUnit`, `Household`, `Person`).
+typed relation's use that pins no slot, raise rather than guess. Untyped relations
+with unpinned uses keep legacy slot 1 when known uses permit that order. Known
+nonlegacy uses still block this compatibility fallback.
+Input records carry their real entity kinds (`TaxUnit`, `Household`, `Person`).
 
 **Why.** axiom-rules-engine#179 made artifacts compiled from typed RuleSpec
 aggregate in declared argument order. §24(h) declares `[TaxUnit, Person]`,

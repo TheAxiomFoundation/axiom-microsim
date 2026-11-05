@@ -29,7 +29,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 from ruamel.yaml import YAML
 
@@ -71,7 +71,7 @@ import os
 import sys
 from pathlib import Path
 
-FLAT_DIRS = ("policies", "regulations", "statutes")
+FLAT_DIRS = ("legislation", "policies", "regulations", "statutes")
 
 
 def fail(message):
@@ -238,6 +238,11 @@ def test_layout_reads_the_top_level(tmp_path: Path) -> None:
     assert M._rules_layout(mono) == "jurisdiction"
 
 
+def test_any_content_root_marks_a_flat_tree(tmp_path: Path) -> None:
+    (tmp_path / "legislation").mkdir()
+    assert M._rules_layout(tmp_path) == "flat"
+
+
 @pytest.mark.parametrize("dirs", [(), ("us", "statutes")])
 def test_layout_refuses_a_tree_it_cannot_place(tmp_path: Path, dirs: tuple[str, ...]) -> None:
     for name in dirs:
@@ -270,16 +275,17 @@ def test_probe_runs_once_per_binary_build(rig: Rig) -> None:
 # --- Flat layout: the command production runs today ----------------------------
 
 
-@pytest.mark.parametrize("kind", ["legacy", "release"])
 @pytest.mark.parametrize("builder", sorted(BUILDERS))
 @pytest.mark.parametrize("reform", [False, True])
-def test_flat_compiles_run_the_pre_25_command(
-    rig: Rig, kind: str, builder: str, reform: bool
-) -> None:
-    """``compile --program <staged program> --output <artifact>``, nothing more."""
+def test_flat_compiles_run_the_pre_25_command(rig: Rig, builder: str, reform: bool) -> None:
+    """``compile --program <staged program> --output <artifact>``, nothing more.
+
+    The legacy fake stands for production's engine. On a flat tree the release
+    fake behaves the same, so it adds nothing here.
+    """
     build, repo, program, override = BUILDERS[builder]
     rig.flat_rules()
-    rig.engine(kind)
+    rig.engine("legacy")
     artifact, scratch = build([override] if reform else None)
 
     (argv,) = rig.compiles()
@@ -349,6 +355,34 @@ def test_stage_names_a_missing_jurisdiction(rig: Rig) -> None:
         M._staged_rules_trees(include_co=True)
 
 
+@pytest.mark.parametrize("layout", ["flat", "jurisdiction"])
+def test_stage_holds_copies_where_the_checkout_has_symlinks(rig: Rig, layout: str) -> None:
+    """A patch can't write through a symlink in the checkout to what it points at."""
+    outside = rig.tmp / "outside.yaml"
+    _write_rules(
+        rig.tmp / "outside", {"x.yaml": ("snap_maximum_allotment_table", {"values": {1: 1}})}
+    )
+    shutil.move(rig.tmp / "outside" / "x.yaml", outside)
+    if layout == "flat":
+        us, _ = rig.flat_rules()
+    else:
+        us = rig.monorepo() / "us"
+    target = us / MAX_ALLOTMENT
+    target.unlink()
+    target.symlink_to(outside)
+    rig.engine("release")
+
+    artifact, scratch = M._artifact_for([ALLOTMENT_OVERRIDE])
+
+    staged = scratch / "rulespec-us"
+    assert not any(path.is_symlink() for path in staged.rglob("*"))
+    assert dict(
+        _read_rule(M._scratch_tree(scratch).repo_dir("rules-us") / MAX_ALLOTMENT)["values"]
+    ) == {1: 2}
+    assert dict(_read_rule(outside)["values"]) == {1: 1}
+    shutil.rmtree(scratch)
+
+
 @pytest.mark.parametrize(
     ("override", "staged_rel"),
     [(ALLOTMENT_OVERRIDE, Path("us") / MAX_ALLOTMENT), (CO_OVERRIDE, Path("us-co") / CO_SNAP)],
@@ -382,6 +416,7 @@ def test_monorepo_overrides_cannot_leave_their_jurisdiction(rig: Rig, escape: st
     with pytest.raises(ValueError, match="file_relative"):
         M._ctc_artifact_for([override])
     assert rig.compiles() == []
+    assert not list((rig.tmp / "scratch").iterdir())
 
 
 # --- Mismatches fail with the reason -------------------------------------------
@@ -415,7 +450,7 @@ def test_flat_only_engine_on_the_monorepo_is_named(rig: Rig, reform: bool) -> No
 FAILED_REFORMS = [
     (builder, failure)
     for builder in [*sorted(BUILDERS), "income-tax-dense"]
-    for failure in ("unknown parameter", "compile refused")
+    for failure in ("unknown parameter", "escaping path", "compile refused")
     if (builder, failure) != ("income-tax-dense", "compile refused")
 ]
 
@@ -442,8 +477,12 @@ def test_a_failed_reform_leaves_no_stage_or_artifact(
         override = ParameterOverride(
             override.repo, override.file_relative, "no_such_parameter", "scale_values", 2.0
         )
+    elif failure == "escaping path":
+        override = ParameterOverride(
+            override.repo, "../../outside.yaml", override.parameter, "scale_values", 2.0
+        )
 
-    with pytest.raises((KeyError, RuntimeError)):
+    with pytest.raises((KeyError, ValueError, RuntimeError)):
         build([override])
 
     assert not list((rig.tmp / "scratch").iterdir())
@@ -603,6 +642,9 @@ def staged_monorepo(tmp_path_factory: pytest.TempPathFactory) -> M._RulesTree:
 
 
 @settings(max_examples=300, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@example(repo="rules-us", file_relative="link/statutes/x.yaml")
+@example(repo="rules-us", file_relative="/etc/passwd")
+@example(repo="rules-us-co", file_relative="../us/statutes/26/24/h.yaml")
 @given(
     repo=st.sampled_from(sorted(M.JURISDICTION_DIRS)),
     file_relative=st.one_of(

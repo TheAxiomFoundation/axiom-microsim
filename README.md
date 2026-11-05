@@ -54,8 +54,8 @@ The Next.js app in `web/` reads `AXIOM_MICROSIM_URL` and POSTs to either.
 
 ### 0. Prereqs (one-time)
 
-* **Python 3.11+** — the dense PyO3 extension targets ≥3.11. macOS:
-  `brew install python@3.13`.
+* **Python 3.14** — `requires-python` pins `==3.14.*`, and CI and the Modal
+  image run the same version. macOS: `brew install python@3.14`.
 * **Rust + maturin** — to build the dense extension. `curl https://sh.rustup.rs | sh -s -- -y`
   then `pip install maturin`.
 * **Population data** — none needed up front. The loader downloads the
@@ -75,7 +75,7 @@ maturin develop --release --manifest-path python-ext/Cargo.toml
 
 ```bash
 cd ~/axiom-microsim
-uv venv --python 3.13 .venv
+uv venv --python 3.14 .venv
 uv pip install --python .venv/bin/python -e .[dev]
 uv pip install --python .venv/bin/python -e ~/axiom-rules-engine/python
 

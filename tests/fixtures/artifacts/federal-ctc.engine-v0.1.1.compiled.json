@@ -1,0 +1,591 @@
+{
+  "artifact_format_version": 2,
+  "engine_version": "0.1.1",
+  "program": {
+    "extends": null,
+    "module": {
+      "summary": "(h) Special rules for taxable years beginning after 2017 (1) In general In the case of a taxable year beginning after December 31, 2017, this section shall be applied as provided in paragraphs (2) through (7). (2) Credit amount Subsection (a) shall be applied by substituting “$2,200” for “$1,000”. (3) Limitation In lieu of the amount determined under subsection (b)(2), the threshold amount shall be $400,000 in the case of a joint return ($200,000 in any other case). (4) Partial credit allowed for certain other dependents (A) In general The credit determined under subsection (a) (after the application of paragraph (2)) shall be increased by $500 for each dependent of the taxpayer (as defined in section 152) other than a qualifying child described in subsection (c). (B) Exception for certain noncitizens Subparagraph (A) shall not apply with respect to any individual who would not be a dependent if subparagraph (A) of section 152(b)(3) were applied without regard to all that follows “resident of the United States”. (C) Certain qualifying children In the case of any qualifying child with respect to whom a credit is not allowed under this section by reason of paragraph (7), such child shall be treated as a dependent to whom subparagraph (A) applies. (5) Maximum amount of refundable credit The amount determined under subsection (d)(1)(A) with respect to any qualifying child shall not exceed $1,400, and such subsection shall be applied without regard to paragraph (4) of this subsection. (6) Earned income threshold for refundable credit Subsection (d)(1)(B)(i) shall be applied by substituting “$2,500” for “$3,000”. (7) Social security number required (A) In general No credit shall be allowed under this section to a taxpayer with respect to any qualifying child unless the taxpayer includes on the return of tax for the taxable year— (i) the taxpayer’s social security number (or, in the case of a joint return, the social security number of at least 1 spouse), and (ii) the social security number of such qualifying child. (B) Social security number For purposes of this paragraph, the term “social security number” means a social security number issued to an individual by the Social Security Administration, but only if the social security number is issued— (i) to a citizen of the United States or pursuant to subclause (I) (or that portion of subclause (III) that relates to subclause (I)) of section 205(c)(2)(B)(i) of the Social Security Act, and (ii) before the due date for such return.",
+      "source_verification": {
+        "corpus_citation_path": "us/statute/26/24"
+      }
+    },
+    "units": [
+      {
+        "name": "GBP",
+        "kind": "currency",
+        "minor_units": 2
+      },
+      {
+        "name": "USD",
+        "kind": "currency",
+        "minor_units": 2
+      },
+      {
+        "name": "EUR",
+        "kind": "currency",
+        "minor_units": 2
+      },
+      {
+        "name": "count",
+        "kind": "count"
+      },
+      {
+        "name": "person",
+        "kind": "count"
+      },
+      {
+        "name": "ratio",
+        "kind": "ratio"
+      },
+      {
+        "name": "status",
+        "kind": "custom",
+        "label": "judgment"
+      }
+    ],
+    "relations": [
+      {
+        "name": "us:statutes/26/24/h#relation.dependent_of_tax_unit",
+        "arity": 2
+      }
+    ],
+    "parameters": [
+      {
+        "id": "us:statutes/26/24/h#ctc_child_amount_under_subsection_h",
+        "name": "ctc_child_amount_under_subsection_h",
+        "unit": "USD",
+        "indexed_by": null,
+        "versions": [
+          {
+            "effective_from": "2018-01-01",
+            "values": {
+              "0": {
+                "kind": "integer",
+                "value": 2200
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "us:statutes/26/24/h#ctc_joint_phase_out_threshold_under_subsection_h",
+        "name": "ctc_joint_phase_out_threshold_under_subsection_h",
+        "unit": "USD",
+        "indexed_by": null,
+        "versions": [
+          {
+            "effective_from": "2018-01-01",
+            "values": {
+              "0": {
+                "kind": "integer",
+                "value": 400000
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "us:statutes/26/24/h#ctc_other_phase_out_threshold_under_subsection_h",
+        "name": "ctc_other_phase_out_threshold_under_subsection_h",
+        "unit": "USD",
+        "indexed_by": null,
+        "versions": [
+          {
+            "effective_from": "2018-01-01",
+            "values": {
+              "0": {
+                "kind": "integer",
+                "value": 200000
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "us:statutes/26/24/h#ctc_other_dependent_amount_under_subsection_h",
+        "name": "ctc_other_dependent_amount_under_subsection_h",
+        "unit": "USD",
+        "indexed_by": null,
+        "versions": [
+          {
+            "effective_from": "2018-01-01",
+            "values": {
+              "0": {
+                "kind": "integer",
+                "value": 500
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "us:statutes/26/24/h#ctc_refundable_per_child_cap_under_subsection_h",
+        "name": "ctc_refundable_per_child_cap_under_subsection_h",
+        "unit": "USD",
+        "indexed_by": null,
+        "versions": [
+          {
+            "effective_from": "2018-01-01",
+            "values": {
+              "0": {
+                "kind": "integer",
+                "value": 1400
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "us:statutes/26/24/h#ctc_refundable_phase_in_threshold_under_subsection_h",
+        "name": "ctc_refundable_phase_in_threshold_under_subsection_h",
+        "unit": "USD",
+        "indexed_by": null,
+        "versions": [
+          {
+            "effective_from": "2018-01-01",
+            "values": {
+              "0": {
+                "kind": "integer",
+                "value": 2500
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "derived": [
+      {
+        "id": "us:statutes/26/24/h#ctc_child_ssn_requirement_satisfied_under_subsection_h",
+        "name": "ctc_child_ssn_requirement_satisfied_under_subsection_h",
+        "entity": "Person",
+        "dtype": "judgment",
+        "unit": null,
+        "period": "Year",
+        "source": "26 USC 24(h)(7)",
+        "source_url": null,
+        "semantics": "judgment",
+        "expr": {
+          "kind": "and",
+          "items": [
+            {
+              "kind": "and",
+              "items": [
+                {
+                  "kind": "and",
+                  "items": [
+                    {
+                      "kind": "comparison",
+                      "left": {
+                        "kind": "input",
+                        "name": "taxpayer_or_spouse_ssn_included_on_return"
+                      },
+                      "op": "eq",
+                      "right": {
+                        "kind": "literal",
+                        "value": {
+                          "kind": "bool",
+                          "value": true
+                        }
+                      }
+                    },
+                    {
+                      "kind": "comparison",
+                      "left": {
+                        "kind": "input",
+                        "name": "qualifying_child_ssn_included_on_return"
+                      },
+                      "op": "eq",
+                      "right": {
+                        "kind": "literal",
+                        "value": {
+                          "kind": "bool",
+                          "value": true
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "comparison",
+                  "left": {
+                    "kind": "input",
+                    "name": "taxpayer_or_spouse_ssn_is_valid_for_subsection_h"
+                  },
+                  "op": "eq",
+                  "right": {
+                    "kind": "literal",
+                    "value": {
+                      "kind": "bool",
+                      "value": true
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "comparison",
+              "left": {
+                "kind": "input",
+                "name": "qualifying_child_ssn_is_valid_for_subsection_h"
+              },
+              "op": "eq",
+              "right": {
+                "kind": "literal",
+                "value": {
+                  "kind": "bool",
+                  "value": true
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "us:statutes/26/24/h#ctc_child_credit_disallowed_by_ssn_requirement_under_subsection_h",
+        "name": "ctc_child_credit_disallowed_by_ssn_requirement_under_subsection_h",
+        "entity": "Person",
+        "dtype": "judgment",
+        "unit": null,
+        "period": "Year",
+        "source": "26 USC 24(h)(7)",
+        "source_url": null,
+        "semantics": "judgment",
+        "expr": {
+          "kind": "and",
+          "items": [
+            {
+              "kind": "comparison",
+              "left": {
+                "kind": "input",
+                "name": "qualifying_child_described_in_subsection_c"
+              },
+              "op": "eq",
+              "right": {
+                "kind": "literal",
+                "value": {
+                  "kind": "bool",
+                  "value": true
+                }
+              }
+            },
+            {
+              "kind": "not",
+              "item": {
+                "kind": "derived",
+                "name": "ctc_child_ssn_requirement_satisfied_under_subsection_h"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "us:statutes/26/24/h#ctc_qualifying_child_under_subsection_h",
+        "name": "ctc_qualifying_child_under_subsection_h",
+        "entity": "Person",
+        "dtype": "judgment",
+        "unit": null,
+        "period": "Year",
+        "source": "26 USC 24(h)(7)",
+        "source_url": null,
+        "semantics": "judgment",
+        "expr": {
+          "kind": "and",
+          "items": [
+            {
+              "kind": "comparison",
+              "left": {
+                "kind": "input",
+                "name": "qualifying_child_described_in_subsection_c"
+              },
+              "op": "eq",
+              "right": {
+                "kind": "literal",
+                "value": {
+                  "kind": "bool",
+                  "value": true
+                }
+              }
+            },
+            {
+              "kind": "derived",
+              "name": "ctc_child_ssn_requirement_satisfied_under_subsection_h"
+            }
+          ]
+        }
+      },
+      {
+        "id": "us:statutes/26/24/h#ctc_other_dependent_under_subsection_h",
+        "name": "ctc_other_dependent_under_subsection_h",
+        "entity": "Person",
+        "dtype": "judgment",
+        "unit": null,
+        "period": "Year",
+        "source": "26 USC 24(h)(4)",
+        "source_url": null,
+        "semantics": "judgment",
+        "expr": {
+          "kind": "or",
+          "items": [
+            {
+              "kind": "and",
+              "items": [
+                {
+                  "kind": "and",
+                  "items": [
+                    {
+                      "kind": "comparison",
+                      "left": {
+                        "kind": "input",
+                        "name": "dependent_under_section_152"
+                      },
+                      "op": "eq",
+                      "right": {
+                        "kind": "literal",
+                        "value": {
+                          "kind": "bool",
+                          "value": true
+                        }
+                      }
+                    },
+                    {
+                      "kind": "not",
+                      "item": {
+                        "kind": "comparison",
+                        "left": {
+                          "kind": "input",
+                          "name": "qualifying_child_described_in_subsection_c"
+                        },
+                        "op": "eq",
+                        "right": {
+                          "kind": "literal",
+                          "value": {
+                            "kind": "bool",
+                            "value": true
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "not",
+                  "item": {
+                    "kind": "comparison",
+                    "left": {
+                      "kind": "input",
+                      "name": "noncitizen_exception_to_other_dependent_credit_under_subsection_h"
+                    },
+                    "op": "eq",
+                    "right": {
+                      "kind": "literal",
+                      "value": {
+                        "kind": "bool",
+                        "value": true
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "derived",
+              "name": "ctc_child_credit_disallowed_by_ssn_requirement_under_subsection_h"
+            }
+          ]
+        }
+      },
+      {
+        "id": "us:statutes/26/24/h#ctc_qualifying_children_under_subsection_h",
+        "name": "ctc_qualifying_children_under_subsection_h",
+        "entity": "TaxUnit",
+        "dtype": "integer",
+        "unit": null,
+        "period": "Year",
+        "source": "26 USC 24(h)(2), 24(h)(7)",
+        "source_url": null,
+        "semantics": "scalar",
+        "expr": {
+          "kind": "count_related",
+          "relation": "us:statutes/26/24/h#relation.dependent_of_tax_unit",
+          "current_slot": 1,
+          "related_slot": 0,
+          "where": {
+            "kind": "derived",
+            "name": "ctc_qualifying_child_under_subsection_h"
+          }
+        }
+      },
+      {
+        "id": "us:statutes/26/24/h#ctc_other_dependents_under_subsection_h",
+        "name": "ctc_other_dependents_under_subsection_h",
+        "entity": "TaxUnit",
+        "dtype": "integer",
+        "unit": null,
+        "period": "Year",
+        "source": "26 USC 24(h)(4)",
+        "source_url": null,
+        "semantics": "scalar",
+        "expr": {
+          "kind": "count_related",
+          "relation": "us:statutes/26/24/h#relation.dependent_of_tax_unit",
+          "current_slot": 1,
+          "related_slot": 0,
+          "where": {
+            "kind": "derived",
+            "name": "ctc_other_dependent_under_subsection_h"
+          }
+        }
+      },
+      {
+        "id": "us:statutes/26/24/h#ctc_phase_out_threshold_under_subsection_h",
+        "name": "ctc_phase_out_threshold_under_subsection_h",
+        "entity": "TaxUnit",
+        "dtype": "decimal",
+        "unit": "USD",
+        "period": "Year",
+        "source": "26 USC 24(h)(3)",
+        "source_url": null,
+        "semantics": "scalar",
+        "expr": {
+          "kind": "if",
+          "condition": {
+            "kind": "comparison",
+            "left": {
+              "kind": "input",
+              "name": "filing_status_is_joint_return"
+            },
+            "op": "eq",
+            "right": {
+              "kind": "literal",
+              "value": {
+                "kind": "bool",
+                "value": true
+              }
+            }
+          },
+          "then_expr": {
+            "kind": "parameter_lookup",
+            "parameter": "ctc_joint_phase_out_threshold_under_subsection_h",
+            "index": {
+              "kind": "literal",
+              "value": {
+                "kind": "integer",
+                "value": 0
+              }
+            }
+          },
+          "else_expr": {
+            "kind": "parameter_lookup",
+            "parameter": "ctc_other_phase_out_threshold_under_subsection_h",
+            "index": {
+              "kind": "literal",
+              "value": {
+                "kind": "integer",
+                "value": 0
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "us:statutes/26/24/h#ctc_maximum_before_phase_out_under_subsection_h",
+        "name": "ctc_maximum_before_phase_out_under_subsection_h",
+        "entity": "TaxUnit",
+        "dtype": "decimal",
+        "unit": "USD",
+        "period": "Year",
+        "source": "26 USC 24(h)(2), 24(h)(4)",
+        "source_url": null,
+        "semantics": "scalar",
+        "expr": {
+          "kind": "add",
+          "items": [
+            {
+              "kind": "mul",
+              "left": {
+                "kind": "derived",
+                "name": "ctc_qualifying_children_under_subsection_h"
+              },
+              "right": {
+                "kind": "parameter_lookup",
+                "parameter": "ctc_child_amount_under_subsection_h",
+                "index": {
+                  "kind": "literal",
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              }
+            },
+            {
+              "kind": "mul",
+              "left": {
+                "kind": "derived",
+                "name": "ctc_other_dependents_under_subsection_h"
+              },
+              "right": {
+                "kind": "parameter_lookup",
+                "parameter": "ctc_other_dependent_amount_under_subsection_h",
+                "index": {
+                  "kind": "literal",
+                  "value": {
+                    "kind": "integer",
+                    "value": 0
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "us:statutes/26/24/h#ctc_refundable_maximum_under_subsection_h",
+        "name": "ctc_refundable_maximum_under_subsection_h",
+        "entity": "TaxUnit",
+        "dtype": "decimal",
+        "unit": "USD",
+        "period": "Year",
+        "source": "26 USC 24(h)(5)",
+        "source_url": null,
+        "semantics": "scalar",
+        "expr": {
+          "kind": "mul",
+          "left": {
+            "kind": "derived",
+            "name": "ctc_qualifying_children_under_subsection_h"
+          },
+          "right": {
+            "kind": "parameter_lookup",
+            "parameter": "ctc_refundable_per_child_cap_under_subsection_h",
+            "index": {
+              "kind": "literal",
+              "value": {
+                "kind": "integer",
+                "value": 0
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "metadata": {
+    "evaluation_order": [
+      "ctc_child_ssn_requirement_satisfied_under_subsection_h",
+      "ctc_child_credit_disallowed_by_ssn_requirement_under_subsection_h",
+      "ctc_other_dependent_under_subsection_h",
+      "ctc_other_dependents_under_subsection_h",
+      "ctc_phase_out_threshold_under_subsection_h",
+      "ctc_qualifying_child_under_subsection_h",
+      "ctc_qualifying_children_under_subsection_h",
+      "ctc_maximum_before_phase_out_under_subsection_h",
+      "ctc_refundable_maximum_under_subsection_h"
+    ],
+    "fast_path": {
+      "strategy": "generic_bulk",
+      "compatible": true,
+      "blockers": []
+    }
+  }
+}

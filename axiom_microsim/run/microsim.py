@@ -441,7 +441,8 @@ RulesLayout = Literal["flat", "jurisdiction"]
 # Public ``repo`` name → the monorepo directory its ``file_relative`` paths
 # resolve under.
 JURISDICTION_DIRS: dict[str, str] = {"rules-us": "us", "rules-us-co": "us-co"}
-_FLAT_TOP_LEVEL_DIRS = ("policies", "regulations", "statutes")
+# The content roots a jurisdiction holds; at a checkout's top level they mean flat.
+_FLAT_TOP_LEVEL_DIRS = ("legislation", "policies", "regulations", "statutes")
 
 
 def _rules_layout(tree: Path) -> RulesLayout:

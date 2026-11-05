@@ -51,8 +51,9 @@ def _batch(sizes: list[int]) -> EcpsBatch:
 def _artifact(path: Path, shelter: list[int], *, bridge: bool = True, owner_slot: int = 1):
     """Minimal compiled-artifact shape; the subprocess double returns these outputs.
 
-    Only compilation and the engine process are doubled. Projection, relation
-    layout inference, bridge collection, request encoding and caching are real.
+    Doubles stand in for compilation and the engine process, and ``_runner`` swaps
+    in small household and person schemas. Projection, relation layout inference,
+    bridge collection, request encoding and caching run for real.
     """
     kinds = [M.PERSON, M.PERSON]
     kinds[owner_slot] = M.HOUSEHOLD

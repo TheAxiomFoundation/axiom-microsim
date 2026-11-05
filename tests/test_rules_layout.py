@@ -392,12 +392,20 @@ def test_rooted_engine_refusing_flat_rules_says_why(rig: Rig) -> None:
         M._ctc_artifact_for(None)
 
 
-def test_flat_only_engine_on_the_monorepo_is_named(rig: Rig) -> None:
-    """f2412104 compiles the monorepo's CTC as ``us:us/statutes/26/24/h``; say so."""
+@pytest.mark.parametrize("reform", [False, True])
+def test_flat_only_engine_on_the_monorepo_is_named(rig: Rig, reform: bool) -> None:
+    """f2412104 compiles the monorepo's CTC as ``us:us/statutes/26/24/h``; say so.
+
+    Every time: the misnamed artifact must not stay behind, or the next run
+    would reuse the cached baseline and fail later with a vaguer error.
+    """
     rig.monorepo()
     rig.engine("legacy")
-    with pytest.raises(RuntimeError, match="reads only the flat layout"):
-        M._ctc_artifact_for(None)
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="reads only the flat layout"):
+            M._ctc_artifact_for([CTC_OVERRIDE] if reform else None)
+    assert len(rig.compiles()) == 2
+    assert not list(M.ARTIFACTS_DIR.iterdir())
 
 
 # --- Baseline tree for the dense path -----------------------------------------

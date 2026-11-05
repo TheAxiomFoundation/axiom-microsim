@@ -515,6 +515,9 @@ _JURISDICTION_IN_ID = tuple(f'"us:{d}/'.encode() for d in JURISDICTION_DIRS.valu
 def _check_jurisdiction_ids(artifact: Path) -> None:
     data = artifact.read_bytes()
     if any(marker in data for marker in _JURISDICTION_IN_ID):
+        # A baseline artifact is reused whenever its file exists, so a misnamed
+        # one must not stay behind for the next run, or for the next engine.
+        artifact.unlink(missing_ok=True)
         raise RuntimeError(
             f"axiom-rules-engine at {ENGINE_BIN} named the monorepo's modules after their "
             f"jurisdiction directory (us:us/...), so it reads only the flat layout. Use an "

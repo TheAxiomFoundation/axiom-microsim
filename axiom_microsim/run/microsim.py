@@ -20,6 +20,7 @@ import tempfile
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import date
+from hashlib import sha256
 from pathlib import Path
 from typing import Literal
 
@@ -755,12 +756,22 @@ def _execute_compiled(
 ) -> dict[str, np.ndarray]:
     output_ids = [DEFAULT_OUTPUT_IDS[n] for n in output_names]
     layout = _co_snap_layout(artifact_path)
+    bridge_cache_key = None
+    request_bytes = None
     if cache_key is not None:
         cache_key = (*cache_key, layout.slot_kinds)
-    request_bytes: bytes
-    if cache_key is not None and cache_key in _CO_SNAP_REQUEST_CACHE:
-        request_bytes = _CO_SNAP_REQUEST_CACHE[cache_key]
-    else:
+        # Plain inputs are shared across reforms. Bridged inputs include a
+        # deduction computed by this artifact, so keep them under its content
+        # hash (reforms use temporary paths; a baseline can be rebuilt in place).
+        bridge_cache_key = (
+            *cache_key,
+            "shelter-bridge",
+            sha256(artifact_path.read_bytes()).digest(),
+        )
+        request_bytes = _CO_SNAP_REQUEST_CACHE.get(bridge_cache_key)
+        if request_bytes is None:
+            request_bytes = _CO_SNAP_REQUEST_CACHE.get(cache_key)
+    if request_bytes is None:
         request = _build_compiled_request(projection, period_year, output_ids, layout=layout)
         request_bytes = orjson.dumps(request)
         if cache_key is not None:
@@ -775,8 +786,8 @@ def _execute_compiled(
         request_bytes = _build_co_snap_shelter_bridge_request_bytes(
             projection, artifact_path, period_year, output_ids, layout=layout
         )
-        if cache_key is not None:
-            _CO_SNAP_REQUEST_CACHE[cache_key] = request_bytes
+        if bridge_cache_key is not None:
+            _CO_SNAP_REQUEST_CACHE[bridge_cache_key] = request_bytes
         proc = subprocess.run(
             [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
             input=request_bytes,

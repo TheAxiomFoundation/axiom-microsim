@@ -89,7 +89,7 @@ def test_program_compiles_with_the_ids_the_runner_requests(program: str, reform:
             shutil.rmtree(scratch, ignore_errors=True)
             artifact.unlink(missing_ok=True)
 
-    missing = [i for i in output_ids if f'"{i}'.encode() not in data]
+    missing = [i for i in output_ids if f'"{i}"'.encode() not in data]
     assert not missing, f"{program} artifact names none of {missing}"
 
 

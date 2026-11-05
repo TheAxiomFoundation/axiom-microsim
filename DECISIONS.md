@@ -123,7 +123,7 @@ from `relation_layout_for_artifact(...)` and builds tuples with
 `layout.tuple_for(owner_id=..., member_id=...)`. Request caches key on
 `layout.slot_kinds`. Never send `"relation_binding": "lenient"`.
 
-## D8 — Compile flags follow the engine; staging follows the rules layout
+## D9 — Compile flags follow the engine; staging follows the rules layout
 
 **Decision.** `_compile` asks each engine binary once, with `compile --help`,
 whether it takes `--rulespec-root`, and passes the staged `rulespec-us` root
@@ -143,5 +143,5 @@ pin move need no code switch.
 
 **How to apply.** A new compile site stages a tree, reads it with
 `_scratch_tree` (or `_baseline_rules_tree`), and calls
-`_compile(program, output, tree)`. Don't pass `--rulespec-root`
+`_compile_program(program, output, tree)`. Don't pass `--rulespec-root`
 unconditionally, and don't infer the layout from the engine.

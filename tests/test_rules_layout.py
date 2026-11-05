@@ -119,6 +119,8 @@ if KIND != "legacy" and parts and (parts[0] == country or parts[0].startswith(co
     country, parts = parts[0], parts[1:]
 module = country + ":" + "/".join(parts).removesuffix(".yaml")
 Path(opts["--output"]).write_text(json.dumps({"program": {"derived": [{"id": module + "#out"}]}}))
+if os.environ.get("FAKE_ENGINE_FAIL_AFTER_WRITE"):
+    fail("write failed after the artifact was opened")
 """
 
 
@@ -408,6 +410,71 @@ def test_flat_only_engine_on_the_monorepo_is_named(rig: Rig, reform: bool) -> No
     assert not list(M.ARTIFACTS_DIR.iterdir())
 
 
+# Each reform builder with each way it can fail after staging. The dense reform
+# compiles in process, so only a bad override can fail it here.
+FAILED_REFORMS = [
+    (builder, failure)
+    for builder in [*sorted(BUILDERS), "income-tax-dense"]
+    for failure in ("unknown parameter", "compile refused")
+    if (builder, failure) != ("income-tax-dense", "compile refused")
+]
+
+
+@pytest.mark.parametrize("layout", ["flat", "jurisdiction"])
+@pytest.mark.parametrize(("builder", "failure"), FAILED_REFORMS)
+def test_a_failed_reform_leaves_no_stage_or_artifact(
+    rig: Rig, layout: str, builder: str, failure: str
+) -> None:
+    """The builder raises before the caller could clean up, so it must."""
+    if layout == "flat":
+        rig.flat_rules()
+    else:
+        rig.monorepo()
+    # A rooted engine refuses a flat root, and a legacy one misnames the
+    # monorepo's modules, which the check refuses; the release one reads both.
+    refusing = {"flat": "rooted", "jurisdiction": "legacy"}[layout]
+    rig.engine(refusing if failure == "compile refused" else "release")
+    if builder == "income-tax-dense":
+        build, override = M._patched_program_for_fed_income_tax, BRACKETS_OVERRIDE
+    else:
+        build, _, _, override = BUILDERS[builder]
+    if failure == "unknown parameter":
+        override = ParameterOverride(
+            override.repo, override.file_relative, "no_such_parameter", "scale_values", 2.0
+        )
+
+    with pytest.raises((KeyError, RuntimeError)):
+        build([override])
+
+    assert not list((rig.tmp / "scratch").iterdir())
+    assert not M.ARTIFACTS_DIR.exists() or not list(M.ARTIFACTS_DIR.iterdir())
+
+
+@pytest.mark.parametrize("reform", [False, True])
+def test_a_refused_compile_leaves_no_partial_artifact(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch, reform: bool
+) -> None:
+    """A partial baseline would be reused as the cache on the next call."""
+    rig.flat_rules()
+    rig.engine("release")
+    monkeypatch.setenv("FAKE_ENGINE_FAIL_AFTER_WRITE", "1")
+
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="write failed after the artifact was opened"):
+            M._ctc_artifact_for([CTC_OVERRIDE] if reform else None)
+
+    assert len(rig.compiles()) == 2
+    assert not list(M.ARTIFACTS_DIR.iterdir())
+    assert not list((rig.tmp / "scratch").iterdir())
+
+
+def test_a_missing_checkout_is_named(rig: Rig, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(M, "RULES_US_DIR", rig.tmp / "no-such-rules-us")
+    for build in (M._baseline_rules_tree, M._staged_rules_trees):
+        with pytest.raises(FileNotFoundError, match="rules-us missing"):
+            build()
+
+
 # --- Baseline tree for the dense path -----------------------------------------
 
 
@@ -440,13 +507,20 @@ def test_other_checkouts_stage_one_baseline_copy(rig: Rig, layout: str) -> None:
 
 
 class _RootedDense:
-    """The binding's ``from_file`` as of axiom-rules-engine 753ce7d."""
+    """The binding's ``from_file`` as of axiom-rules-engine 753ce7d.
+
+    Like the engine, it refuses a root or program path that isn't canonical.
+    """
 
     calls: list[dict] = []
 
     @classmethod
     def from_file(cls, path, *, rulespec_roots, entity=None, outputs=None):
-        cls.calls.append({"path": path, "rulespec_roots": list(rulespec_roots), "entity": entity})
+        roots = list(rulespec_roots)
+        for candidate in (path, *roots):
+            if Path(candidate).resolve() != Path(candidate):
+                raise ValueError(f"`{candidate}` is an alias; pass its exact canonical path")
+        cls.calls.append({"path": path, "rulespec_roots": roots, "entity": entity})
         return cls()
 
     def execute(self, **kwargs):
@@ -464,12 +538,14 @@ class _UnrootedDense(_RootedDense):
         return cls()
 
 
+@pytest.mark.parametrize("reform", [False, True])
 @pytest.mark.parametrize(
     ("binding", "layout"), [(_RootedDense, "jurisdiction"), (_UnrootedDense, "flat")]
 )
 def test_dense_compile_passes_roots_only_to_a_binding_that_takes_them(
-    rig: Rig, monkeypatch: pytest.MonkeyPatch, binding: type, layout: str
+    rig: Rig, monkeypatch: pytest.MonkeyPatch, binding: type, layout: str, reform: bool
 ) -> None:
+    """A reform compiles from the stage, which sits behind the Rig's symlink."""
     if layout == "flat":
         rig.flat_rules(name="rulespec-us")
     else:
@@ -480,8 +556,13 @@ def test_dense_compile_passes_roots_only_to_a_binding_that_takes_them(
         "axiom_rules_engine.dense",
         types.SimpleNamespace(CompiledDenseProgram=binding),
     )
-    tree = M._baseline_rules_tree()
-    program = tree.repo_dir("rules-us") / INCOME_TAX
+    if reform:
+        program, scratch = M._patched_program_for_fed_income_tax([BRACKETS_OVERRIDE])
+        tree = M._scratch_tree(scratch)
+        assert scratch.resolve() != scratch
+    else:
+        tree = M._baseline_rules_tree()
+        program = tree.repo_dir("rules-us") / INCOME_TAX
     projection = FedIncomeTaxProjection(
         n_tax_units=1,
         period_year=2026,
@@ -533,7 +614,10 @@ def staged_monorepo(tmp_path_factory: pytest.TempPathFactory) -> M._RulesTree:
 def test_accepted_overrides_resolve_inside_their_jurisdiction(
     staged_monorepo: M._RulesTree, repo: str, file_relative: str
 ) -> None:
-    jurisdiction = staged_monorepo.repo_dir(repo).resolve()
+    # Spelled out here, not taken from repo_dir, so a wrong mapping fails too.
+    jurisdiction = (
+        staged_monorepo.root / {"rules-us": "us", "rules-us-co": "us-co"}[repo]
+    ).resolve()
     try:
         target = M._resolve_override_target(staged_monorepo.repo_dir(repo), file_relative)
     except ValueError:

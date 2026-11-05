@@ -13,6 +13,8 @@ aggregate) stays unchanged.
 
 from __future__ import annotations
 
+import functools
+import inspect
 import os
 import shutil
 import subprocess
@@ -298,11 +300,13 @@ def run_federal_income_tax(
     # _staged_rules_trees).
     if overrides:
         program_path, scratch = _patched_program_for_fed_income_tax(overrides)
+        tree = _scratch_tree(scratch)
     else:
-        program_path, scratch = _baseline_rules_us_root() / FED_INCOME_TAX_PROGRAM_REL, None
+        tree = _baseline_rules_tree()
+        program_path, scratch = tree.repo_dir("rules-us") / FED_INCOME_TAX_PROGRAM_REL, None
 
     try:
-        out = _execute_fed_income_tax_dense(projection, program_path, period_year, outputs)
+        out = _execute_fed_income_tax_dense(projection, program_path, period_year, outputs, tree)
     finally:
         if scratch is not None:
             shutil.rmtree(scratch, ignore_errors=True)
@@ -328,7 +332,7 @@ def _patched_program_for_fed_income_tax(
 ) -> tuple[Path, Path]:
     """Copy rules-us to a scratch tree, patch, return (program_yaml, scratch_root)."""
     scratch = _staged_rules_trees()
-    dst = scratch / "rulespec-us"
+    dst = _scratch_tree(scratch).repo_dir("rules-us")
     for ov in overrides:
         if ov.repo != "rules-us":
             raise ValueError(f"federal-income-tax overrides must target rules-us, got {ov.repo}")
@@ -341,11 +345,19 @@ def _execute_fed_income_tax_dense(
     program_yaml: Path,
     period_year: int,
     output_names: tuple[str, ...],
+    tree: _RulesTree,
 ) -> dict[str, np.ndarray]:
     """In-process dense execution. No JSON, no subprocess."""
     from axiom_rules_engine.dense import CompiledDenseProgram
 
-    program = CompiledDenseProgram.from_file(str(program_yaml), entity=TAX_UNIT)
+    # Like the CLI's `compile`, the binding's `from_file` takes the RuleSpec
+    # roots in current engines, and nothing of the kind in older ones.
+    if "rulespec_roots" in inspect.signature(CompiledDenseProgram.from_file).parameters:
+        program = CompiledDenseProgram.from_file(
+            str(program_yaml.resolve()), rulespec_roots=[str(tree.root.resolve())], entity=TAX_UNIT
+        )
+    else:
+        program = CompiledDenseProgram.from_file(str(program_yaml), entity=TAX_UNIT)
     # The projection keys inputs by their full RuleSpec id; the dense
     # binding wants bare slot names.
     dense_inputs = {
@@ -402,6 +414,112 @@ def _slots() -> tuple[list[_SlotSpec], list[_SlotSpec]]:
     return _HH_SLOTS, _PERSON_SLOTS
 
 
+# --- Rules layout and the engine's compile contract (#25) -------------------
+#
+# rulespec-us has two layouts. The flat one keeps one checkout per
+# jurisdiction (``rulespec-us/statutes/...``, ``rulespec-us-co/policies/...``).
+# The monorepo puts each jurisdiction in its own directory
+# (``rulespec-us/us/statutes/...``, ``rulespec-us/us-co/policies/...``).
+# Module ids are the same in both: ``us:statutes/26/24/h``.
+#
+# Engines differ in what they take and read:
+#
+# * Engines whose ``compile`` takes ``--rulespec-root`` require it, and read
+#   only the monorepo layout.
+# * Older engines take only ``--program`` and ``--output``. Some read both
+#   layouts (the v0.1 release line); others, such as the SHA modal_app.py pins,
+#   read only the flat one and name monorepo modules ``us:us/statutes/...``.
+#
+# So the layout comes from the top level of AXIOM_RULES_US_DIR, the flag from
+# what the engine answers to ``compile --help``, and the engine judges the
+# layout itself. Public ``repo`` / ``file_relative`` values keep their
+# flat-era meaning in both layouts.
+
+RulesLayout = Literal["flat", "jurisdiction"]
+
+# Public ``repo`` name → the monorepo directory its ``file_relative`` paths
+# resolve under.
+JURISDICTION_DIRS: dict[str, str] = {"rules-us": "us", "rules-us-co": "us-co"}
+_FLAT_TOP_LEVEL_DIRS = ("policies", "regulations", "statutes")
+
+
+def _rules_layout(tree: Path) -> RulesLayout:
+    """Tell a flat rules checkout from a jurisdiction-layout monorepo."""
+    flat = any((tree / name).is_dir() for name in _FLAT_TOP_LEVEL_DIRS)
+    jurisdiction = (tree / JURISDICTION_DIRS["rules-us"]).is_dir()
+    if flat != jurisdiction:
+        return "flat" if flat else "jurisdiction"
+    raise ValueError(
+        f"cannot tell the RuleSpec layout of {tree}: expected either top-level "
+        f"{'/, '.join(_FLAT_TOP_LEVEL_DIRS)}/ (flat) or a us/ jurisdiction directory"
+    )
+
+
+@dataclass(frozen=True)
+class _RulesTree:
+    """Where one compile reads RuleSpec from."""
+
+    layout: RulesLayout
+    # Flat: the ``rulespec-us`` checkout. Jurisdiction: the monorepo root, which
+    # is also the ``--rulespec-root`` a current engine gets.
+    root: Path
+    # Flat only: the ``rulespec-us-co`` checkout.
+    co_root: Path | None = None
+
+    def repo_dir(self, repo: str) -> Path:
+        """The directory a public ``repo``'s ``file_relative`` paths resolve under."""
+        if repo not in JURISDICTION_DIRS:
+            raise ValueError(f"unknown rules repo {repo!r}")
+        if self.layout == "jurisdiction":
+            return self.root / JURISDICTION_DIRS[repo]
+        if repo == "rules-us":
+            return self.root
+        if self.co_root is None:
+            raise ValueError("this rules tree holds no rules-us-co checkout")
+        return self.co_root
+
+
+def _scratch_tree(scratch: Path) -> _RulesTree:
+    """The tree :func:`_staged_rules_trees` laid out under ``scratch``."""
+    root = scratch / "rulespec-us"
+    layout = _rules_layout(root)
+    return _RulesTree(layout, root, scratch / "rulespec-us-co" if layout == "flat" else None)
+
+
+def _engine_takes_rulespec_root() -> bool:
+    """Whether ``ENGINE_BIN``'s ``compile`` takes ``--rulespec-root``.
+
+    Probed once per binary build: engines that take it print a usage naming it
+    and exit 0, and older ones reject ``--help`` as an unknown argument. An
+    answer that names no ``--rulespec-root`` reads as "older"; if that is wrong,
+    the engine's own compile error says a root is missing.
+    """
+    stat = ENGINE_BIN.stat()
+    return _probe_rulespec_root_flag(str(ENGINE_BIN), stat.st_mtime_ns, stat.st_size)
+
+
+@functools.cache
+def _probe_rulespec_root_flag(binary: str, _mtime_ns: int, _size: int) -> bool:
+    proc = subprocess.run([binary, "compile", "--help"], capture_output=True, timeout=60)
+    return proc.returncode == 0 and b"--rulespec-root" in proc.stdout
+
+
+# An engine that reads only the flat layout names a monorepo module after its
+# jurisdiction directory too. The runs would fail later, on the first id they
+# name, with a less useful error.
+_JURISDICTION_IN_ID = tuple(f'"us:{d}/'.encode() for d in JURISDICTION_DIRS.values())
+
+
+def _check_jurisdiction_ids(artifact: Path) -> None:
+    data = artifact.read_bytes()
+    if any(marker in data for marker in _JURISDICTION_IN_ID):
+        raise RuntimeError(
+            f"axiom-rules-engine at {ENGINE_BIN} named the monorepo's modules after their "
+            f"jurisdiction directory (us:us/...), so it reads only the flat layout. Use an "
+            f"engine that reads the us/ layout, or flat rules-us and rules-us-co checkouts."
+        )
+
+
 # --- Compile / patch ---------------------------------------------------------
 
 
@@ -414,12 +532,33 @@ def _staged_rules_trees(*, include_co: bool = False) -> Path:
     ids — and every request keyed by legal id then fails. Staging under
     ``rulespec-us`` / ``rulespec-us-co`` keeps ids intact regardless of
     how the local checkout is named. Caller removes the scratch dir.
+
+    A jurisdiction-layout monorepo stages as one ``rulespec-us`` holding only
+    ``us/`` (and ``us-co/`` with ``include_co``): those are the jurisdictions
+    the three programs read, and the monorepo's other states and tooling would
+    only lengthen every reform's copy. Read the result with :func:`_scratch_tree`.
     """
     if not RULES_US_DIR.exists():
         raise FileNotFoundError(f"rules-us missing at {RULES_US_DIR}")
-    if include_co and not RULES_US_CO_DIR.exists():
+    layout = _rules_layout(RULES_US_DIR)
+    if layout == "flat" and include_co and not RULES_US_CO_DIR.exists():
         raise FileNotFoundError(f"rules-us-co missing at {RULES_US_CO_DIR}")
+    repos = ("rules-us", "rules-us-co") if include_co else ("rules-us",)
+    if layout == "jurisdiction":
+        for repo in repos:
+            if not (RULES_US_DIR / JURISDICTION_DIRS[repo]).is_dir():
+                raise FileNotFoundError(
+                    f"{JURISDICTION_DIRS[repo]}/ missing from the rulespec-us checkout "
+                    f"at {RULES_US_DIR}"
+                )
     scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-rules-"))
+    if layout == "jurisdiction":
+        for repo in repos:
+            directory = JURISDICTION_DIRS[repo]
+            shutil.copytree(
+                RULES_US_DIR / directory, scratch / "rulespec-us" / directory, symlinks=False
+            )
+        return scratch
     shutil.copytree(RULES_US_DIR, scratch / "rulespec-us", symlinks=False)
     if include_co:
         shutil.copytree(RULES_US_CO_DIR, scratch / "rulespec-us-co", symlinks=False)
@@ -429,19 +568,24 @@ def _staged_rules_trees(*, include_co: bool = False) -> Path:
 _BASELINE_RULES_SCRATCH: Path | None = None
 
 
-def _baseline_rules_us_root() -> Path:
-    """A rules-us tree whose path contains a ``rulespec-`` component.
+def _baseline_rules_tree() -> _RulesTree:
+    """A rules-us tree the engine names correctly, for unpatched dense compiles.
 
-    Used for baseline compiles that read YAML directly (no patching).
-    If the checkout already resolves to a canonical name (Modal), use it
-    as-is; otherwise stage one persistent copy per process and reuse it.
+    A flat checkout needs a ``rulespec-`` component in its resolved path, and a
+    jurisdiction-layout one must itself be named ``rulespec-us``. If the
+    checkout already qualifies (Modal), use it as-is; otherwise stage one
+    persistent copy per process and reuse it.
     """
     global _BASELINE_RULES_SCRATCH
-    if any(part.startswith("rulespec-") for part in RULES_US_DIR.resolve().parts):
-        return RULES_US_DIR
+    resolved = RULES_US_DIR.resolve()
+    if _rules_layout(RULES_US_DIR) == "flat":
+        if any(part.startswith("rulespec-") for part in resolved.parts):
+            return _RulesTree("flat", RULES_US_DIR, RULES_US_CO_DIR)
+    elif resolved.name == "rulespec-us":
+        return _RulesTree("jurisdiction", resolved)
     if _BASELINE_RULES_SCRATCH is None or not _BASELINE_RULES_SCRATCH.exists():
         _BASELINE_RULES_SCRATCH = _staged_rules_trees()
-    return _BASELINE_RULES_SCRATCH / "rulespec-us"
+    return _scratch_tree(_BASELINE_RULES_SCRATCH)
 
 
 def _artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path | None]:
@@ -451,23 +595,24 @@ def _artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, Path
             scratch = _staged_rules_trees(include_co=True)
             try:
                 ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+                tree = _scratch_tree(scratch)
                 _compile(
-                    scratch / "rulespec-us-co" / CO_SNAP_PROGRAM_REL, CO_SNAP_BASELINE_ARTIFACT
+                    tree.repo_dir("rules-us-co") / CO_SNAP_PROGRAM_REL,
+                    CO_SNAP_BASELINE_ARTIFACT,
+                    tree,
                 )
             finally:
                 shutil.rmtree(scratch, ignore_errors=True)
         return CO_SNAP_BASELINE_ARTIFACT, None
 
     scratch = _staged_rules_trees(include_co=True)
-    dst_us = scratch / "rulespec-us"
-    dst_us_co = scratch / "rulespec-us-co"
+    tree = _scratch_tree(scratch)
     for ov in overrides:
-        target_root = dst_us if ov.repo == "rules-us" else dst_us_co
-        _patch_yaml(_resolve_override_target(target_root, ov.file_relative), ov)
+        _patch_yaml(_resolve_override_target(tree.repo_dir(ov.repo), ov.file_relative), ov)
 
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     out = ARTIFACTS_DIR / f".tmp-{scratch.name}.compiled.json"
-    _compile(dst_us_co / CO_SNAP_PROGRAM_REL, out)
+    _compile(tree.repo_dir("rules-us-co") / CO_SNAP_PROGRAM_REL, out, tree)
     return out, scratch
 
 
@@ -479,13 +624,15 @@ def _ctc_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, 
             scratch = _staged_rules_trees()
             try:
                 ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-                _compile(scratch / "rulespec-us" / FED_CTC_PROGRAM_REL, baseline)
+                tree = _scratch_tree(scratch)
+                _compile(tree.repo_dir("rules-us") / FED_CTC_PROGRAM_REL, baseline, tree)
             finally:
                 shutil.rmtree(scratch, ignore_errors=True)
         return baseline, None
 
     scratch = _staged_rules_trees()
-    dst = scratch / "rulespec-us"
+    tree = _scratch_tree(scratch)
+    dst = tree.repo_dir("rules-us")
     for ov in overrides:
         if ov.repo != "rules-us":
             raise ValueError(f"federal-ctc overrides must target rules-us, got {ov.repo}")
@@ -493,7 +640,7 @@ def _ctc_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, 
 
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     out = ARTIFACTS_DIR / f".tmp-{scratch.name}.compiled.json"
-    _compile(dst / FED_CTC_PROGRAM_REL, out)
+    _compile(dst / FED_CTC_PROGRAM_REL, out, tree)
     return out, scratch
 
 
@@ -646,14 +793,16 @@ def _fed_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, 
             scratch = _staged_rules_trees()
             try:
                 ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-                _compile(scratch / "rulespec-us" / FED_INCOME_TAX_PROGRAM_REL, baseline)
+                tree = _scratch_tree(scratch)
+                _compile(tree.repo_dir("rules-us") / FED_INCOME_TAX_PROGRAM_REL, baseline, tree)
             finally:
                 shutil.rmtree(scratch, ignore_errors=True)
         return baseline, None
 
     # Reform: copy the rules-us tree, patch, recompile.
     scratch = _staged_rules_trees()
-    dst = scratch / "rulespec-us"
+    tree = _scratch_tree(scratch)
+    dst = tree.repo_dir("rules-us")
     for ov in overrides:
         if ov.repo != "rules-us":
             raise ValueError(
@@ -663,7 +812,7 @@ def _fed_artifact_for(overrides: list[ParameterOverride] | None) -> tuple[Path, 
 
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     out = ARTIFACTS_DIR / f".tmp-{scratch.name}.compiled.json"
-    _compile(dst / FED_INCOME_TAX_PROGRAM_REL, out)
+    _compile(dst / FED_INCOME_TAX_PROGRAM_REL, out, tree)
     return out, scratch
 
 
@@ -730,16 +879,34 @@ def _execute_fed_income_tax(
     return arrays
 
 
-def _compile(program_yaml: Path, output_json: Path) -> None:
+def _compile(program_yaml: Path, output_json: Path, tree: _RulesTree) -> None:
+    """Compile ``program_yaml``, which lies in ``tree``, with ``ENGINE_BIN``.
+
+    An engine without ``--rulespec-root`` gets the same command as before #25.
+    One with it also gets ``tree.root`` as the root, with both paths absolute
+    and canonical, as it requires.
+    """
     if not ENGINE_BIN.exists():
         raise FileNotFoundError(
             f"Engine binary missing at {ENGINE_BIN}. Run scripts/setup_engine.sh once."
         )
-    subprocess.run(
-        [str(ENGINE_BIN), "compile", "--program", str(program_yaml), "--output", str(output_json)],
-        check=True,
-        capture_output=True,
-    )
+    if _engine_takes_rulespec_root():
+        cmd = [
+            str(ENGINE_BIN),
+            "compile",
+            "--program",
+            str(program_yaml.resolve()),
+            "--rulespec-root",
+            str(tree.root.resolve()),
+        ]
+    else:
+        cmd = [str(ENGINE_BIN), "compile", "--program", str(program_yaml)]
+    proc = subprocess.run([*cmd, "--output", str(output_json)], capture_output=True)
+    if proc.returncode != 0:
+        detail = (proc.stderr.strip() or proc.stdout.strip()).decode(errors="replace")
+        raise RuntimeError(f"engine compile failed for {program_yaml}:\n{detail[:1500]}")
+    if tree.layout == "jurisdiction":
+        _check_jurisdiction_ids(output_json)
 
 
 # --- Execute -----------------------------------------------------------------

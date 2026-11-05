@@ -33,7 +33,7 @@ export function MethodologyEcpsPanel() {
   return (
     <div className="space-y-6">
       <p className="editorial">
-        These are the actual weighted aggregates of every ECPS column the
+        These are the actual weighted aggregates of every Populace column the
         loader reads, for the scope shown. If a number here looks wrong,
         the projection downstream will be wrong too — they're the
         upstream truth.
@@ -95,7 +95,7 @@ function ScopePanel({
         <table className="w-full min-w-[30rem] border-collapse text-sm">
           <thead className="font-mono text-[0.65rem] uppercase tracking-eyebrow text-ink-muted">
             <tr className="border-b border-rule">
-              <th className="px-3 py-2 text-left">ECPS column</th>
+              <th className="px-3 py-2 text-left">Populace column</th>
               <th className="px-3 py-2 text-right">Weighted total</th>
               <th className="px-3 py-2 text-right">Mean per {data.units_label.slice(0, -1)}</th>
               <th className="px-3 py-2 text-right">% of {data.units_label} {">"} 0</th>

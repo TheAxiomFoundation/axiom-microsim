@@ -16,12 +16,15 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
+import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import date
 from hashlib import sha256
 from pathlib import Path
+from threading import Lock
 from typing import Literal
 
 import numpy as np
@@ -29,6 +32,7 @@ import orjson
 from ruamel.yaml import YAML
 
 from ..data.ecps_loader import EcpsBatch, TaxUnitBatch
+from ..data.population_identity import file_identity, population_identity
 from ..project.co_snap import CoSnapProjection, project as project_co_snap
 from ..project.federal_ctc import FedCtcProjection, project as project_federal_ctc
 from ..project.federal_income_tax import (
@@ -48,35 +52,41 @@ REQUEST_CACHE_MAX_ENTRIES = 8
 
 
 class _BoundedRequestCache:
-    """Tiny LRU keyed by tuple → bytes. Move-to-end on get and put."""
+    """Thread-safe LRU keyed by tuple → bytes. Move-to-end on get and put."""
 
     def __init__(self, max_entries: int = REQUEST_CACHE_MAX_ENTRIES) -> None:
         self._max = max_entries
         self._d: OrderedDict[tuple, bytes] = OrderedDict()
+        self._lock = Lock()
 
     def get(self, key: tuple) -> bytes | None:
-        v = self._d.get(key)
-        if v is not None:
-            self._d.move_to_end(key)
-        return v
+        with self._lock:
+            v = self._d.get(key)
+            if v is not None:
+                self._d.move_to_end(key)
+            return v
 
     def __contains__(self, key: tuple) -> bool:
-        return key in self._d
+        with self._lock:
+            return key in self._d
 
     def __getitem__(self, key: tuple) -> bytes:
-        v = self._d[key]
-        self._d.move_to_end(key)
-        return v
+        with self._lock:
+            v = self._d[key]
+            self._d.move_to_end(key)
+            return v
 
     def __setitem__(self, key: tuple, value: bytes) -> None:
-        if key in self._d:
-            self._d.move_to_end(key)
-        self._d[key] = value
-        while len(self._d) > self._max:
-            self._d.popitem(last=False)
+        with self._lock:
+            if key in self._d:
+                self._d.move_to_end(key)
+            self._d[key] = value
+            while len(self._d) > self._max:
+                self._d.popitem(last=False)
 
     def __len__(self) -> int:
-        return len(self._d)
+        with self._lock:
+            return len(self._d)
 
 
 # --- Locations ---------------------------------------------------------------
@@ -204,6 +214,25 @@ CO_SNAP_EXCESS_SHELTER_OUTPUT = "us-co:regulations/10-ccr-2506-1/4.407.3#excess_
 FED_SNAP_EXCESS_SHELTER_INPUT = "us:statutes/7/2014/e/6/A#input.snap_excess_shelter_deduction"
 
 
+def _batch_digest(batch: EcpsBatch | TaxUnitBatch) -> str:
+    """Hash a batch's contents, so a caller's own batch never reads another's cached bytes."""
+    digest = sha256()
+
+    def add(name: str, array: np.ndarray) -> None:
+        digest.update(f"{name}:{array.dtype.str}:{array.shape}:".encode())
+        digest.update(repr(array.tolist()).encode() if array.dtype.hasobject else array.tobytes())
+
+    for name, value in sorted(vars(batch).items()):
+        if isinstance(value, np.ndarray):
+            add(name, value)
+        elif isinstance(value, dict):
+            for column in sorted(value):
+                add(f"{name}.{column}", np.asarray(value[column]))
+        else:
+            digest.update(f"{name}={value!r};".encode())
+    return digest.hexdigest()
+
+
 def run_co_snap(
     batch: EcpsBatch,
     *,
@@ -213,7 +242,14 @@ def run_co_snap(
 ) -> MicrosimResult:
     projection = project_co_snap(batch, period_year=period_year)
     artifact_path, scratch = _artifact_for(overrides)
-    cache_key = ("co-snap", batch.state, period_year, outputs)
+    cache_key = (
+        "co-snap",
+        batch.state,
+        period_year,
+        outputs,
+        population_identity(),
+        _batch_digest(batch),
+    )
     try:
         out = _execute_compiled(
             projection,
@@ -252,7 +288,14 @@ def run_federal_ctc(
     """
     projection = project_federal_ctc(batch, period_year=period_year)
     artifact_path, scratch = _ctc_artifact_for(overrides)
-    cache_key = ("federal-ctc", batch.state, period_year, outputs)
+    cache_key = (
+        "federal-ctc",
+        batch.state,
+        period_year,
+        outputs,
+        population_identity(),
+        _batch_digest(batch),
+    )
     try:
         out = _execute_ctc(
             projection,
@@ -419,10 +462,12 @@ def _staged_rules_trees(*, include_co: bool = False) -> Path:
         raise FileNotFoundError(f"rules-us missing at {RULES_US_DIR}")
     if include_co and not RULES_US_CO_DIR.exists():
         raise FileNotFoundError(f"rules-us-co missing at {RULES_US_CO_DIR}")
+    t0 = time.time()
     scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-rules-"))
     shutil.copytree(RULES_US_DIR, scratch / "rulespec-us", symlinks=False)
     if include_co:
         shutil.copytree(RULES_US_CO_DIR, scratch / "rulespec-us-co", symlinks=False)
+    sys.stderr.write(f"[timing] stage rules trees: {time.time() - t0:.2f}s\n")
     return scratch
 
 
@@ -601,6 +646,7 @@ def _execute_ctc(
     cache_key: tuple | None = None,
 ) -> dict[str, np.ndarray]:
     """Build a CompiledExecutionRequest for §24(h) and run it."""
+    t0 = time.time()
     request_bytes = _build_ctc_request_bytes(
         projection,
         period_year,
@@ -608,12 +654,15 @@ def _execute_ctc(
         cache_key=cache_key,
         layout=_ctc_layout(artifact_path),
     )
+    sys.stderr.write(f"[timing] ctc build request: {time.time() - t0:.2f}s\n")
 
+    t0 = time.time()
     proc = subprocess.run(
         [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
         input=request_bytes,
         capture_output=True,
     )
+    sys.stderr.write(f"[timing] ctc engine run: {time.time() - t0:.2f}s\n")
     if proc.returncode != 0:
         raise RuntimeError(f"engine failed:\n{proc.stderr.strip()[:1500]}")
     response = orjson.loads(proc.stdout)
@@ -735,11 +784,13 @@ def _compile(program_yaml: Path, output_json: Path) -> None:
         raise FileNotFoundError(
             f"Engine binary missing at {ENGINE_BIN}. Run scripts/setup_engine.sh once."
         )
+    t0 = time.time()
     subprocess.run(
         [str(ENGINE_BIN), "compile", "--program", str(program_yaml), "--output", str(output_json)],
         check=True,
         capture_output=True,
     )
+    sys.stderr.write(f"[timing] engine compile {program_yaml.name}: {time.time() - t0:.2f}s\n")
 
 
 # --- Execute -----------------------------------------------------------------
@@ -761,12 +812,13 @@ def _execute_compiled(
     if cache_key is not None:
         cache_key = (*cache_key, layout.slot_kinds)
         # Plain inputs are shared across reforms. Bridged inputs include a
-        # deduction computed by this artifact, so keep them under its content
-        # hash (reforms use temporary paths; a baseline can be rebuilt in place).
+        # deduction computed by this artifact and engine, so track both
+        # (reforms use temporary paths; a baseline can be rebuilt in place).
         bridge_cache_key = (
             *cache_key,
             "shelter-bridge",
             sha256(artifact_path.read_bytes()).digest(),
+            file_identity(ENGINE_BIN),
         )
         request_bytes = _CO_SNAP_REQUEST_CACHE.get(bridge_cache_key)
         if request_bytes is None:

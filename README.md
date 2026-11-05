@@ -1,50 +1,57 @@
 # axiom-microsim
 
-PE-free microsimulation over Enhanced CPS using `axiom-rules-engine`.
+PE-free microsimulation over the pinned populace-US population using
+`axiom-rules-engine`, with an optional PolicyEngine comparison endpoint.
 
 Companion to [`axiom-co-snap`](https://github.com/TheAxiomFoundation/co-snap-cliffs)
 (single-household sweeps) and [`axiom-programs`](https://github.com/TheAxiomFoundation/axiom-programs)
 (oracle comparison). Where co-snap shows what one household receives across an
 earnings sweep, **axiom-microsim runs the same Axiom rules against an entire
-ECPS state population and returns weighted aggregates** — cost, distributional
-impact, reform vs baseline winners/losers.
+state or nationwide population and returns weighted aggregates** — cost,
+distributional impact, reform vs baseline winners/losers.
 
-The runtime path imports zero PolicyEngine code. The Enhanced CPS `.h5` file
-is read with `h5py` directly; rule evaluation goes through the
-`CompiledDenseProgram` columnar batch interface in `axiom-rules-engine`.
+The Axiom evaluation path imports zero PolicyEngine code, and `h5py` reads the
+pinned `populace_us_2024.h5` file directly. SNAP and CTC run compiled programs
+through the engine binary; federal income tax uses the `CompiledDenseProgram`
+columnar interface in `axiom-rules-engine`. The `/compare` endpoint runs
+PolicyEngine in a separate Python process.
 
-## v1 scope
+## Current scope
 
-- **Program**: Colorado SNAP only (matches co-snap-cliffs).
-- **Outputs**: aggregate cost, weighted decile distribution, baseline-vs-reform
-  winners/losers shares.
-- **Reform mechanism**: parameter overrides via in-memory RuleSpec YAML patch
-  (lifted from co-snap-cliffs).
-- **Not in v1**: SPM / poverty impact (deferred — see `DECISIONS.md`),
-  programs other than CO SNAP, federal programs.
+- **Server programs**: Colorado SNAP (`co-snap`), federal ordinary income-tax
+  brackets under §1(j) (`federal-income-tax`), and the §24(h) Child Tax Credit
+  maximum before phase-out (`federal-ctc`). Federal programs use tax units
+  and support nationwide or state scopes; SNAP uses households.
+- **Outputs**: aggregate benefit cost or tax revenue, weighted decile
+  distribution, and baseline-vs-reform winners/losers shares.
+- **Reform mechanism**: parameter overrides applied to scratch copies of the
+  RuleSpec trees before compilation.
+- **Endpoints**: `/microsim` evaluates Axiom rules; `/compare` runs the PE
+  oracle; `/ecps-stats` reports the population columns read for a scope.
+- **Limitations**: Axiom-side SPM / poverty impact remains deferred (see
+  `DECISIONS.md`); `/compare` includes PE poverty outputs when available.
+  The CLI currently supports CO SNAP only.
 
 ## Architecture
 
 ```text
-ECPS .h5 (h5py)
+Pinned populace .h5 (h5py)
     │
     ▼
-EcpsBatch (numpy columns + person→household offsets)
+EcpsBatch / TaxUnitBatch (numpy columns + person→unit offsets)
     │
     ▼
-project/co_snap.py  ─────►  DenseCompiledProgram inputs
-                                    │
-                                    ▼  (axiom-rules-engine, Rust)
-                            Output numpy arrays (snap_allotment, ...)
-                                    │
-                                    ▼
-                           aggregate/{cost,distribution,reform}
-                                    │
-                                    ▼
-                            JSON response
+project/{co_snap,federal_income_tax,federal_ctc}.py
+    │
+    ▼
+axiom-rules-engine (compiled binary for SNAP/CTC; dense binding for income tax)
+    │
+    ▼
+Output numpy arrays → weighted totals, deciles, reform impact → JSON response
 ```
 
 Two transports for the same handler:
+
 - **Local**: `uv run uvicorn axiom_microsim.server:app --reload`
 - **Modal**: `modal deploy modal_app.py` — same FastAPI app wrapped in `@modal.asgi_app()`
 
@@ -101,8 +108,8 @@ npm install
 npm run dev                       # http://localhost:3000
 ```
 
-Adjust the SNAP max-allotment slider; the UI calls `/api/microsim`, which
-proxies to `AXIOM_MICROSIM_URL/microsim`.
+Choose a program and adjust its reform sliders; the UI calls `/api/microsim`,
+which proxies to `AXIOM_MICROSIM_URL/microsim`.
 
 ## Population data
 
@@ -121,29 +128,29 @@ release, resolved by `axiom_microsim/data/populace_loader.py`:
 **Resolution order** (both loaders — `load_state`, `load_state_tax_units`):
 
 1. explicit `path=` argument (either layout; auto-sniffed);
-2. `$AXIOM_POPULACE_US_H5` — a local copy of the pinned file (still
+2. `$AXIOM_ECPS_PATH` — **legacy** Enhanced CPS escape hatch (emits a
+   `DeprecationWarning`; only used if it is set);
+3. `$AXIOM_POPULACE_US_H5` — a local copy of the pinned file (still
    sha256-verified; skips the download, not the check);
-3. the pinned `hf_hub_download` of the revision above, then verified;
-4. `$AXIOM_ECPS_PATH` — **legacy** Enhanced CPS escape hatch (emits a
-   `DeprecationWarning`; only used if it is set).
+4. the pinned `hf_hub_download` of the revision above, then verified.
 
-There is **no unpinned fallback**: a hash mismatch raises
-`PopulaceVerificationError` ("refusing to run on unverified population
-data") rather than silently running on the wrong data.
+For the default populace source there is **no unpinned fallback**: a hash
+mismatch raises `PopulaceVerificationError` ("refusing to run on unverified
+population data") rather than silently running on the wrong data.
 
 ### Why pinned *dense*, not Hugging Face `latest`
 
-`latest.json` and PolicyEngine bundle 4.18.8 currently point at the
-*sparse* refit artifact
+At the 2026-07-02 migration, `latest.json` and PolicyEngine bundle 4.18.8
+pointed at the *sparse* refit artifact
 (`populace-us-2024-sparse-l0-refit-57k-…-national-only-20260701`), which
 **zeroes untargeted input bases** — IRA/HSA/self-employed pension/childcare
 and other engine inputs come back all-zero
 ([PolicyEngine/populace#278](https://github.com/PolicyEngine/populace/issues/278),
-closed by pipeline-fix PR #279; a rebuilt sparse artifact is **not** yet
-published/certified). We pin the **dense** `f0af251` release — the last
-certified dense US population dataset — whose #278-class columns carry real
-mass. When a post-#279 sparse (or newer dense) release is certified with
-those bases confirmed non-zero, bump the pin in `populace_loader.py`.
+closed by pipeline-fix PR #279). The loader still pins the **dense**
+`f0af251` release whose #278-class columns carry real mass, rather than
+following `latest`. When a post-#279 sparse (or newer dense) release is
+certified with those bases confirmed non-zero, bump the pin in
+`populace_loader.py`.
 
 ### populace layout note
 
@@ -163,13 +170,13 @@ aliased — projections consume the raw inputs (`unemployment_compensation`,
 axiom_microsim/
   data/populace_loader.py    # pinned populace: resolve + sha256-verify + read
   data/ecps_loader.py        # source resolution, state filter, EcpsBatch/TaxUnitBatch
-  project/co_snap.py         # population columns → CO SNAP dense inputs
-  run/microsim.py            # CompiledDenseProgram wrapper + reform overrides
+  project/                  # population columns → SNAP, income-tax and CTC inputs
+  run/microsim.py            # compiled binary/dense execution + reform overrides
   aggregate/cost.py          # Σ benefit × weight
   aggregate/distribution.py  # weighted decile groupby
   aggregate/reform.py        # baseline vs reform delta, winners/losers
   cli.py                     # `axiom-microsim run …`
-  server.py                  # FastAPI POST /microsim
+  server.py                  # FastAPI /microsim, /compare and /ecps-stats
 modal_app.py                 # Modal wrapper around server.py
 engine/artifacts/            # compiled program JSONs (gitignored)
 web/                         # Next.js frontend

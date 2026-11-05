@@ -13,8 +13,8 @@ distributional impact, reform vs baseline winners/losers.
 The Axiom evaluation path imports zero PolicyEngine code, and `h5py` reads the
 pinned `populace_us_2024.h5` file directly. SNAP and CTC run compiled programs
 through the engine binary; federal income tax uses the `CompiledDenseProgram`
-columnar interface in `axiom-rules-engine`. The separate `/compare` endpoint
-runs PolicyEngine in its own Python environment through a subprocess.
+columnar interface in `axiom-rules-engine`. The `/compare` endpoint runs
+PolicyEngine in a separate Python process.
 
 ## Current scope
 

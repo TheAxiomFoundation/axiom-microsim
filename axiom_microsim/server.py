@@ -965,10 +965,10 @@ def _tax_deciles(tax: np.ndarray, weight: np.ndarray) -> list[DecileBinOut]:
 
 
 # --- Startup prewarm ---------------------------------------------------------
-# The three default panels always request the same baselines. Computing them
-# once at container start (opt-in via AXIOM_PREWARM=1; Modal sets it) turns
-# the first user click — including the multi-minute PE /compare baseline —
-# into a cache hit. Same computation, same results, just done early.
+# The three default panels always request the same baselines. A background
+# thread computes them at container start (opt-in via AXIOM_PREWARM=1; Modal
+# sets it), so a click after it finishes, including the multi-minute PE
+# /compare baseline, hits the caches. A click before then can still run cold.
 
 _PREWARM_TARGETS = [
     ("federal-ctc", "US"),

@@ -1,19 +1,212 @@
-"""Changed population or engine inputs cannot reuse stale request bytes.
+"""Changed population, batch or engine inputs cannot reuse stale request bytes.
 
 The engine and projection doubles leave each public runner's real request-cache
 key construction in place. Reusing that key would reuse an encoded population
 even when the result cache correctly requested a new engine baseline.
+
+For every batch of either type, equal contents digest alike and a change to any
+element of any field digests differently, so a caller's own batch never reads
+another batch's encoded request.
 """
 
 from __future__ import annotations
 
+import copy
 import os
+from collections.abc import Iterator
 from types import SimpleNamespace
 
+import numpy as np
 import orjson
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
+from _artifacts import CO_SNAP_UNTYPED, CTC_UNTYPED, load_artifact, write_artifact
+from axiom_microsim.data.ecps_loader import EcpsBatch, TaxUnitBatch
 from axiom_microsim.run import microsim as M
+
+
+def _snap_batch(ages: list[int]) -> EcpsBatch:
+    n = len(ages)
+    return EcpsBatch(
+        state="CO",
+        year="2024",
+        n_persons=n,
+        n_households=1,
+        person_household_index=np.zeros(n, dtype=np.int64),
+        household_weight=np.ones(1),
+        person_columns={
+            "age": np.asarray(ages, dtype=np.int64),
+            "is_disabled": np.zeros(n, dtype=bool),
+            "employment_income_before_lsr": np.zeros(n),
+            "self_employment_income_before_lsr": np.zeros(n),
+            "pre_subsidy_rent": np.full(n, 12_000),
+        },
+    )
+
+
+def _ctc_batch(ages: list[int]) -> TaxUnitBatch:
+    n = len(ages)
+    return TaxUnitBatch(
+        state="CO",
+        year="2024",
+        n_persons=n,
+        n_tax_units=1,
+        person_tax_unit_index=np.zeros(n, dtype=np.int64),
+        tax_unit_weight=np.ones(1),
+        person_columns={"age": np.asarray(ages, dtype=np.int64)},
+    )
+
+
+@pytest.mark.parametrize("program", ["co-snap", "federal-ctc"])
+def test_same_shaped_batches_never_share_an_encoded_request(program, monkeypatch, tmp_path):
+    """Projection, encoding and caching run for real; only the engine process is a double."""
+    sent: list[bytes] = []
+
+    def run_engine(cmd, *, input, capture_output):
+        sent.append(input)
+        return SimpleNamespace(returncode=0, stdout=b'{"results": []}', stderr=b"")
+
+    monkeypatch.setattr(M.subprocess, "run", run_engine)
+    monkeypatch.setattr(M, "population_identity", lambda: ("fixed population",))
+    if program == "co-snap":
+        cache = M._BoundedRequestCache()
+        monkeypatch.setattr(M, "_CO_SNAP_REQUEST_CACHE", cache)
+        monkeypatch.setattr(M, "_HH_SLOTS", [M._SlotSpec("household_size", "integer", 1)])
+        monkeypatch.setattr(M, "_PERSON_SLOTS", [M._SlotSpec("member_age", "integer", 0)])
+        artifact = write_artifact(tmp_path, "co-snap.json", load_artifact(CO_SNAP_UNTYPED))
+        monkeypatch.setattr(M, "_artifact_for", lambda overrides: (artifact, None))
+        run, batch = M.run_co_snap, _snap_batch
+    else:
+        cache = M._BoundedRequestCache()
+        monkeypatch.setattr(M, "_CTC_REQUEST_CACHE", cache)
+        monkeypatch.setattr(M, "_ctc_artifact_for", lambda overrides: (CTC_UNTYPED, None))
+        run, batch = M.run_federal_ctc, _ctc_batch
+
+    run(batch([40, 10]))
+    run(batch([40, 30]))
+    run(batch([40, 10]))
+
+    first, other, repeat = sent
+    assert first != other, "a second batch of the same shape read the first batch's request"
+    assert repeat == first
+    assert len(cache) == 2, "an equal batch rebuilt its encoded request"
+
+
+def _ints(n: int) -> st.SearchStrategy[np.ndarray]:
+    return st.lists(st.integers(0, 1_000), min_size=n, max_size=n).map(
+        lambda values: np.asarray(values, dtype=np.int64)
+    )
+
+
+def _floats(n: int) -> st.SearchStrategy[np.ndarray]:
+    return _ints(n).map(lambda values: values.astype(np.float64))
+
+
+@st.composite
+def _batches(draw: st.DrawFn) -> EcpsBatch | TaxUnitBatch:
+    n_persons = draw(st.integers(1, 5))
+    n_groups = draw(st.integers(1, 3))
+    state = draw(st.sampled_from(["CO", "US"]))
+    person_columns = {"age": draw(_ints(n_persons)), "income": draw(_floats(n_persons))}
+    index = draw(_ints(n_persons))
+    weight = draw(_floats(n_groups))
+    if draw(st.booleans()):
+        return EcpsBatch(
+            state=state,
+            year="2024",
+            n_persons=n_persons,
+            n_households=n_groups,
+            person_household_index=index,
+            household_weight=weight,
+            person_columns=person_columns,
+            household_columns={"rent": draw(_floats(n_groups))},
+        )
+    return TaxUnitBatch(
+        state=state,
+        year="2024",
+        n_persons=n_persons,
+        n_tax_units=n_groups,
+        person_tax_unit_index=index,
+        tax_unit_weight=weight,
+        person_columns=person_columns,
+    )
+
+
+def _copies_with_one_change(
+    batch: EcpsBatch | TaxUnitBatch, element: int
+) -> Iterator[tuple[str, EcpsBatch | TaxUnitBatch]]:
+    """Yield one altered copy per field, and per column of a field holding columns."""
+    for name, value in vars(batch).items():
+        changed = copy.deepcopy(batch)
+        if isinstance(value, dict):
+            for column in value:
+                changed = copy.deepcopy(batch)
+                array = getattr(changed, name)[column]
+                array[element % len(array)] += 1
+                yield f"{name}.{column}", changed
+        elif isinstance(value, np.ndarray):
+            array = getattr(changed, name)
+            array[element % len(array)] += 1
+            yield name, changed
+        else:
+            setattr(changed, name, value + ("x" if isinstance(value, str) else 1))
+            yield name, changed
+
+
+@settings(max_examples=100, deadline=None)
+@given(batch=_batches(), element=st.integers(0, 100))
+def test_batch_digest_follows_contents_alone(batch, element):
+    digest = M._batch_digest(batch)
+    assert M._batch_digest(copy.deepcopy(batch)) == digest
+    for changed_field, changed in _copies_with_one_change(batch, element):
+        assert M._batch_digest(changed) != digest, f"the digest ignored {changed_field}"
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        pytest.param(np.zeros(2, dtype=np.int64), np.zeros(2, dtype=np.float64), id="dtype"),
+        pytest.param(np.zeros(4), np.zeros((2, 2)), id="shape"),
+        pytest.param(
+            np.array(["ab", "c"], dtype=object),
+            np.array(["a", "bc"], dtype=object),
+            id="object-values",
+        ),
+    ],
+)
+def test_batch_digest_separates_columns_whose_bytes_could_match(first, second):
+    assert M._batch_digest(SimpleNamespace(column=first)) != M._batch_digest(
+        SimpleNamespace(column=second)
+    )
+    assert M._batch_digest(SimpleNamespace(columns={"x": first})) != M._batch_digest(
+        SimpleNamespace(columns={"x": second})
+    )
+
+
+def test_batch_digest_reads_object_columns_by_value():
+    """Separately built strings hold different pointers and the same text."""
+
+    def column() -> np.ndarray:
+        return np.array(["".join(["a", "b"]), "".join(["c", "d"])], dtype=object)
+
+    assert M._batch_digest(SimpleNamespace(column=column())) == M._batch_digest(
+        SimpleNamespace(column=column())
+    )
+
+
+def test_batch_digest_reads_names_and_ignores_their_order():
+    age, income = np.array([40, 10]), np.array([1.5, 2.5])
+    digest = M._batch_digest(SimpleNamespace(state="CO", columns={"age": age, "income": income}))
+
+    assert digest == M._batch_digest(
+        SimpleNamespace(columns={"income": income, "age": age}, state="CO")
+    )
+    assert M._batch_digest(SimpleNamespace(columns={"age": age})) != M._batch_digest(
+        SimpleNamespace(columns={"years": age})
+    )
+    assert M._batch_digest(SimpleNamespace(left=age)) != M._batch_digest(SimpleNamespace(right=age))
 
 
 @pytest.mark.parametrize("program", ["co-snap", "federal-ctc"])

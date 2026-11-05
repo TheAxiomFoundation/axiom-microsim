@@ -341,7 +341,9 @@ def test_fingerprint_parts_are_hashed_into_a_portable_filename(monkeypatch, tmp_
     assert re.fullmatch(r"federal-income-tax-US-2026-[0-9a-f]{64}\.pkl", path.name)
 
 
-@settings(max_examples=12, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(
+    max_examples=12, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
 @given(
     program=st.sampled_from(["federal-income-tax", "federal-ctc", "co-snap"]),
     state=st.sampled_from(["US", "CO", "DC", "CA"]),

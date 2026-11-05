@@ -214,6 +214,25 @@ CO_SNAP_EXCESS_SHELTER_OUTPUT = "us-co:regulations/10-ccr-2506-1/4.407.3#excess_
 FED_SNAP_EXCESS_SHELTER_INPUT = "us:statutes/7/2014/e/6/A#input.snap_excess_shelter_deduction"
 
 
+def _batch_digest(batch: EcpsBatch | TaxUnitBatch) -> str:
+    """Hash a batch's contents, so a caller's own batch never reads another's cached bytes."""
+    digest = sha256()
+
+    def add(name: str, array: np.ndarray) -> None:
+        digest.update(f"{name}:{array.dtype.str}:{array.shape}:".encode())
+        digest.update(repr(array.tolist()).encode() if array.dtype.hasobject else array.tobytes())
+
+    for name, value in sorted(vars(batch).items()):
+        if isinstance(value, np.ndarray):
+            add(name, value)
+        elif isinstance(value, dict):
+            for column in sorted(value):
+                add(f"{name}.{column}", np.asarray(value[column]))
+        else:
+            digest.update(f"{name}={value!r};".encode())
+    return digest.hexdigest()
+
+
 def run_co_snap(
     batch: EcpsBatch,
     *,
@@ -223,7 +242,14 @@ def run_co_snap(
 ) -> MicrosimResult:
     projection = project_co_snap(batch, period_year=period_year)
     artifact_path, scratch = _artifact_for(overrides)
-    cache_key = ("co-snap", batch.state, period_year, outputs, population_identity())
+    cache_key = (
+        "co-snap",
+        batch.state,
+        period_year,
+        outputs,
+        population_identity(),
+        _batch_digest(batch),
+    )
     try:
         out = _execute_compiled(
             projection,
@@ -262,7 +288,14 @@ def run_federal_ctc(
     """
     projection = project_federal_ctc(batch, period_year=period_year)
     artifact_path, scratch = _ctc_artifact_for(overrides)
-    cache_key = ("federal-ctc", batch.state, period_year, outputs, population_identity())
+    cache_key = (
+        "federal-ctc",
+        batch.state,
+        period_year,
+        outputs,
+        population_identity(),
+        _batch_digest(batch),
+    )
     try:
         out = _execute_ctc(
             projection,

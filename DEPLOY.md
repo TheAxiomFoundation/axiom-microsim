@@ -98,9 +98,9 @@ vercel --prod
 ```
 
 After Vercel deploys, the Next.js `/api/*` routes pick up
-`AXIOM_MICROSIM_URL` and proxy every request to Modal. The `/compare`
-endpoint takes ~10-100 s in production (PolicyEngine warm-up) — the
-Vercel function is configured with an 800s timeout to allow this.
+`AXIOM_MICROSIM_URL` and proxy every request to Modal. A cold `/compare`
+takes about 8 minutes in production (PolicyEngine warm-up), so the Vercel
+function allows 800s.
 
 ## What lives where
 

@@ -174,7 +174,7 @@ image = (
         "AXIOM_PE_PYTHON": "/usr/local/bin/python",
         "AXIOM_PE_SCRIPT": "/opt/axiom-microsim/scripts/compute_pe_one.py",
         # Precompute the three default baselines (incl. the slow PE ones)
-        # when a container starts, so first clicks hit the caches.
+        # when a container starts, so clicks after that hit the caches.
         "AXIOM_PREWARM": "1",
     })
 )

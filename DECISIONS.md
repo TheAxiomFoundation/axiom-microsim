@@ -46,19 +46,18 @@ returning placeholder zeros.
 
 ## D4 — Reform mechanism: in-memory RuleSpec YAML patch
 
-**Decision.** Reforms are expressed as a list of `{path, value}` overrides;
-the runner patches the imported RuleSpec YAML on a per-request scratch tree
+**Decision.** Public reforms use the finite numeric lever catalogue described
+in D8. The local runner also accepts richer `ParameterOverride` patches; it
+patches the imported RuleSpec YAML on a per-request scratch tree
 and recompiles (~70 ms). Output arrays are produced for baseline and reform
 in the same request.
 
-**Why.** This is exactly what `axiom-co-snap` does. Reusing the pattern
-keeps the contract identical between the household sweep app and the
-microsim app, so a reform that "looks right" in co-snap can be moved here
-unchanged.
+**Why.** The scratch-tree mechanism comes from `axiom-co-snap`. Public callers
+need only the checked-in web sliders, so their narrower contract does not
+expose the local runner's formula text or individual table-cell edits.
 
-**How to apply.** New reformable parameters should be exposed as parameter
-paths in the frontend; the request body shape stays
-`{program, scope, year, overrides}`.
+**How to apply.** Add public levers to both the frontend and D8's backend
+catalogue. The request body is `{program, state, year, overrides}`.
 
 ## D5 — Repo boundary
 
@@ -122,3 +121,66 @@ aggregate from slot 1, so the declaration alone is not enough (issue #23).
 from `relation_layout_for_artifact(...)` and builds tuples with
 `layout.tuple_for(owner_id=..., member_id=...)`. Request caches key on
 `layout.slot_kinds`. Never send `"relation_binding": "lenient"`.
+
+## D8 — Public requests follow the web lever catalogue
+
+**Decision.** `axiom_microsim/public_contract.py` accepts exact catalogue
+targets and only `scale_values`, `scale_formula`, and `set_scalar`. Formula
+text and individual table cells are refused. Uniform table scaling preserves
+threshold order. `scale_formula` multiplies the numeric literal in the rules
+tree; there is no Python copy of the additional-member baseline. `set_scalar`
+formats a validated number as a literal in the local runtime's `set_formula`.
+
+These numeric bounds come directly from the named sliders in
+`web/src/lib/levers.ts`, including both endpoints:
+
+| Slider | Axiom targets | Public range | PE counterpart |
+|---|---|---|---|
+| `max_allotment_scale` | SNAP maximum-allotment table and additional-member literal | multiplier 0.5–2 | none |
+| `standard_deduction_scale` | SNAP standard-deduction table, 48 states/DC | multiplier 0–2 | none |
+| `all_rates_scale` | All seven federal income-tax bracket rates | multiplier 0.5–1.5 | each baseline rate (0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37) times 0.5–1.5 |
+| `joint_thresholds_scale` | Federal joint bracket thresholds | multiplier 0.5–2 | none |
+| `single_thresholds_scale` | Federal single bracket thresholds | multiplier 0.5–2 | none |
+| `ctc_child_amount` | CTC child amount | $0–$6,000 | `gov.irs.credits.ctc.amount.base[0].amount`, same range |
+| `ctc_other_dependent_amount` | CTC other-dependent amount | $0–$2,500 | `gov.irs.credits.ctc.amount.adult_dependent`, same range |
+| `ctc_joint_phase_out` | CTC joint phase-out threshold | $50,000–$1,000,000 | `gov.irs.credits.ctc.phase_out.threshold.JOINT`, same range |
+
+These are continuous ranges; slider steps are presentation choices. Lever
+payloads must be finite numbers; numeric strings and booleans are refused. The
+two POST routes accept only normalized `CO` for `co-snap`, matching its frontend
+`state_choices`. Federal programs accept the loader's 50 states plus DC and
+`US`. Both routes accept only 2026, the year the web sends and the server
+prewarms. A request for any other year would start a full run for a result the
+site never shows, and the compare cache, the baseline cache and the PE disk
+cache would each keep a copy.
+
+Both public POST routes retain at most 16 overrides and 16 KiB of actual
+body bytes. These headroom limits cover all simultaneous frontend levers
+(nine Axiom targets, ten PE paths) while bounding parsing and work. Duplicate
+targets are refused. File, parameter, and PE path lengths (200, 100, and 120
+characters) allow the catalogue names with headroom; exact membership remains
+required. State normalization and numeric checks run without reading rules.
+
+**Deployment bound.** The Modal web function allows at most two containers,
+each with four input slots and eight CPUs. No per-process work semaphore is
+used: a web click starts `/microsim` and `/compare` together, and `_prewarm`
+calls those handlers directly. A one-slot refusal would reject normal use.
+The container cap bounds public scaling without that conflict.
+
+**How to apply.** When a slider, target, or kind changes, update
+`web/src/lib/levers.ts`, `web/src/lib/types.ts`, and the Axiom/PE catalogues
+in `axiom_microsim/public_contract.py`. Update this table and
+`tests/test_public_contract.py::test_every_frontend_lever_accepts_both_extremes`;
+that test runs the real builders under Node, so keep its endpoint count in
+sync with added or removed sliders. When the rules pin changes, update
+`RULESPEC_US_SHA` and `ENGINE_VERSION` in `modal_app.py`, reconcile catalogue
+paths/kinds with the new YAML, and run
+`tests/test_public_rules.py::test_catalogued_target_exists_and_accepts_its_kinds`
+against that pin. It checks every target's first-version shape and numeric
+formulas, and skips only when the rules tree is absent. Keep the runtime scale
+properties and public refusal properties green. The AST deployment test in
+`tests/test_runtime_consistency.py` guards the container cap.
+
+**Still open from issue #10.** Authentication, tightening CORS, mounting
+rules read-only, and compile sandboxing remain separate work. The catalogue
+and container cap do not implement those controls.

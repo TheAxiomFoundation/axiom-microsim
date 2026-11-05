@@ -29,6 +29,7 @@ PE_PAYLOAD = {
 }
 
 REQUEST = {"program": "federal-income-tax", "state": "US", "year": 2026}
+RATE_PATH = "gov.irs.income.bracket.rates.1"
 
 
 @pytest.fixture
@@ -96,8 +97,8 @@ def test_compare_cache_key_separates_distinct_overrides(monkeypatch, pe_python):
     calls = _stub_subprocess(monkeypatch, _ok)
     client = TestClient(server.app)
 
-    for value in (0.1, 0.2, 0.1):
-        body = {**REQUEST, "overrides": [{"path": "gov.irs.rate", "value": value}]}
+    for value in (0.1, 0.12, 0.1):
+        body = {**REQUEST, "overrides": [{"path": RATE_PATH, "value": value}]}
         assert client.post("/compare", json=body).status_code == 200
 
     assert len(calls) == 2, "distinct override values must not share a cache entry"
@@ -109,7 +110,7 @@ def test_compare_cache_is_bounded(monkeypatch, pe_python):
 
     overflow = server._CACHE_MAX_ENTRIES + 5
     for i in range(overflow):
-        body = {**REQUEST, "overrides": [{"path": "gov.irs.rate", "value": float(i)}]}
+        body = {**REQUEST, "overrides": [{"path": RATE_PATH, "value": 0.05 + i * 0.001}]}
         assert client.post("/compare", json=body).status_code == 200
 
     assert len(server._COMPARE_CACHE) == server._CACHE_MAX_ENTRIES

@@ -195,6 +195,8 @@ image = (
     # for 15 minutes after the last one, so a demo session pays one cold
     # start, not one per click.
     min_containers=0,
+    # Each container holds four inputs and eight CPUs; cap public load at two containers.
+    max_containers=2,
     scaledown_window=900,
 )
 # Without this, one multi-minute PE /compare holds the container's single

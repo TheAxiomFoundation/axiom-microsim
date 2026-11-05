@@ -1059,7 +1059,9 @@ def _patch_yaml(path: Path, override: ParameterOverride) -> None:
         if "values" not in version:
             raise ValueError(f"{override.parameter} has no values to scale")
         for k in version["values"]:
-            scaled = version["values"][k] * (override.multiplier or 1.0)
+            scaled = version["values"][k] * (
+                1.0 if override.multiplier is None else override.multiplier
+            )
             # Preserve rate-style decimals, round money-style integers.
             # Heuristic: if the original was an int and the scale stays
             # whole-cent-ish, round to int; otherwise keep float precision.
@@ -1079,7 +1081,8 @@ def _patch_yaml(path: Path, override: ParameterOverride) -> None:
             raise ValueError(
                 f"scale_formula needs a numeric-literal formula on {override.parameter}"
             ) from exc
-        version["formula"] = str(round(n * (override.multiplier or 1.0), 2))
+        multiplier = 1.0 if override.multiplier is None else override.multiplier
+        version["formula"] = str(round(n * multiplier, 2))
     elif override.patch_kind == "set_formula":
         version["formula"] = override.formula
 

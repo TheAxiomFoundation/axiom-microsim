@@ -18,21 +18,33 @@ import threading as _threading
 import time as _time
 from collections import OrderedDict
 from pathlib import Path as _Path
-from typing import Annotated, Literal
+from typing import Literal
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import AfterValidator, BaseModel, Field
+from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, Field
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .aggregate.cost import aggregate as aggregate_cost
 from .aggregate.distribution import by_household_income_decile
 from .aggregate.reform import compare as compare_reform
 from .data.ecps_loader import (
-    STATE_FIPS,
     load_state,
     load_state_tax_units,
     sum_person_to_tax_unit,
+)
+from .public_contract import (
+    MAX_BODY_BYTES,
+    VALID_STATE_SCOPES,  # noqa: F401 — retain the server model import surface
+    CompareRequest,
+    MicrosimRequest,
+    OverrideIn,  # noqa: F401
+    PeOverrideIn,  # noqa: F401
+    StateScope,
+    _validate_state_scope,  # noqa: F401
 )
 from .run.microsim import (
     ParameterOverride,
@@ -41,63 +53,7 @@ from .run.microsim import (
     run_federal_income_tax,
 )
 
-
-# --- State scope validation --------------------------------------------------
-# Every endpoint takes a `state` scope. That value is not just a filter: it
-# reaches a PE subprocess argv and, in ``scripts/compute_pe_one.py``, a
-# filesystem cache path that is ``pickle.load``-ed. Free-form text there
-# would let a caller escape the cache dir (``../``) and choose the pickle
-# the server unpickles — remote code execution on a public, CORS-``*``
-# endpoint. So the scope is an allowlist, never a string.
-#
-# ``US`` is nationwide; everything else must be one of the 50 states + DC
-# (``STATE_FIPS`` is the loader's own hand-encoded Census FIPS table).
-
-VALID_STATE_SCOPES = frozenset({"US", *STATE_FIPS})
-
-
-def _validate_state_scope(value: str) -> str:
-    """Normalise and allowlist a state scope; raise so Pydantic returns 422."""
-    scope = value.strip().upper()
-    if scope not in VALID_STATE_SCOPES:
-        raise ValueError(
-            f"unknown state scope {value!r}; expected 'US' or a 2-letter state/DC code"
-        )
-    return scope
-
-
-StateScope = Annotated[str, AfterValidator(_validate_state_scope)]
-
-
 # --- Request / response models ----------------------------------------------
-
-
-class OverrideIn(BaseModel):
-    repo: Literal["rules-us", "rules-us-co"]
-    file_relative: str
-    parameter: str
-    patch_kind: Literal["scale_values", "set_values", "scale_formula", "set_formula"]
-    multiplier: float | None = None
-    values: dict[int, float] | None = None
-    formula: str | None = None
-
-    def to_runtime(self) -> ParameterOverride:
-        return ParameterOverride(
-            repo=self.repo,
-            file_relative=self.file_relative,
-            parameter=self.parameter,
-            patch_kind=self.patch_kind,
-            multiplier=self.multiplier,
-            values=self.values,
-            formula=self.formula,
-        )
-
-
-class MicrosimRequest(BaseModel):
-    program: Literal["co-snap", "federal-income-tax", "federal-ctc"] = "co-snap"
-    state: StateScope = "CO"
-    year: int = 2026
-    overrides: list[OverrideIn] = Field(default_factory=list)
 
 
 # --- Shared output shapes ---------------------------------------------------
@@ -156,13 +112,68 @@ class MicrosimResponse(BaseModel):
 
 # --- App --------------------------------------------------------------------
 
+
+class PublicBodyLimit:
+    """Count actual ASGI bytes before parsing, including chunked request bodies."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope.get("path") not in {"/microsim", "/compare"}:
+            await self.app(scope, receive, send)
+            return
+
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            chunk = message.get("body", b"")
+            if len(body) + len(chunk) > MAX_BODY_BYTES:
+                response = JSONResponse(
+                    {"detail": f"body exceeds {MAX_BODY_BYTES} bytes"}, status_code=413
+                )
+                await response(scope, receive, send)
+                return
+            body.extend(chunk)
+            if not message.get("more_body", False):
+                break
+
+        delivered = False
+
+        async def bounded_receive():
+            nonlocal delivered
+            if delivered:
+                return await receive()
+            delivered = True
+            return {"type": "http.request", "body": bytes(body), "more_body": False}
+
+        await self.app(scope, bounded_receive, send)
+
+
 app = FastAPI(title="axiom-microsim", version="0.2.0")
+app.add_middleware(PublicBodyLimit)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def public_validation_error(_request, exc: RequestValidationError):
+    # Nonfinite JSON numbers must get a 422 too. Echoing their raw input in
+    # FastAPI's default error response would itself fail JSON serialization.
+    errors = [{key: error[key] for key in ("type", "loc", "msg")} for error in exc.errors()]
+    # Escape arbitrary dictionary/extra-field names, including lone Unicode
+    # surrogates in JSON, so the refusal response always remains encodable.
+    return Response(
+        json.dumps({"detail": errors}, ensure_ascii=True, allow_nan=False),
+        status_code=422,
+        media_type="application/json",
+    )
 
 
 @app.get("/health")
@@ -277,18 +288,6 @@ _PE_SCRIPT = _Path(
         str(_Path(__file__).resolve().parent.parent / "scripts" / "compute_pe_one.py"),
     )
 )
-
-
-class PeOverrideIn(BaseModel):
-    path: str
-    value: float
-
-
-class CompareRequest(BaseModel):
-    program: Literal["co-snap", "federal-income-tax", "federal-ctc"]
-    state: StateScope = "US"
-    year: int = 2026
-    overrides: list[PeOverrideIn] = Field(default_factory=list)
 
 
 class PovertyOut(BaseModel):

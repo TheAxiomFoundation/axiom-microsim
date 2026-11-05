@@ -17,6 +17,8 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from hypothesis import given, strategies as st
+from pydantic import ValidationError
 
 from axiom_microsim import server
 
@@ -140,6 +142,45 @@ def test_allowlist_is_the_50_states_plus_dc_plus_nationwide():
 def test_validator_message_names_the_offending_value():
     with pytest.raises(ValueError, match="unknown state scope"):
         server._validate_state_scope("x/../../../tmp/evil")
+
+
+@pytest.mark.parametrize("route", ["/microsim", "/compare"])
+@pytest.mark.parametrize("scope", ["US", "CA", "DC"])
+def test_co_snap_refuses_non_colorado_scope_before_work(route, scope, monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("work started for a non-Colorado co-snap request")
+
+    monkeypatch.setattr(server, "_run_co_snap", forbidden)
+    monkeypatch.setattr(server._subprocess, "run", forbidden)
+    response = TestClient(server.app).post(
+        route, json={"program": "co-snap", "state": scope, "year": 2026}
+    )
+    assert response.status_code == 422
+    assert "state must be CO for co-snap" in response.text
+
+
+@pytest.mark.parametrize("model", [server.MicrosimRequest, server.CompareRequest])
+@given(scope=st.sampled_from(sorted(server.VALID_STATE_SCOPES)))
+def test_invariant_co_snap_accepts_only_colorado(model, scope):
+    if scope == "CO":
+        assert model(program="co-snap", state=scope).state == "CO"
+    else:
+        with pytest.raises(ValidationError, match="state must be CO"):
+            model(program="co-snap", state=scope)
+
+
+@pytest.mark.parametrize("model", [server.MicrosimRequest, server.CompareRequest])
+@given(
+    program=st.sampled_from(["federal-ctc", "federal-income-tax"]),
+    scope=st.sampled_from(sorted(server.VALID_STATE_SCOPES)),
+)
+def test_invariant_federal_programs_accept_every_state_scope(model, program, scope):
+    assert model(program=program, state=f" {scope.lower()} ").state == scope
+
+
+@pytest.mark.parametrize("model", [server.MicrosimRequest, server.CompareRequest])
+def test_co_snap_accepts_normalised_colorado(model):
+    assert model(program="co-snap", state=" co ").state == "CO"
 
 
 # --- compute_pe_one.py standalone defence -----------------------------------

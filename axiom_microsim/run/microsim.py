@@ -426,9 +426,10 @@ def _slots() -> tuple[list[_SlotSpec], list[_SlotSpec]]:
 #
 # * Engines whose ``compile`` takes ``--rulespec-root`` require it, and read
 #   only the monorepo layout.
-# * Older engines take only ``--program`` and ``--output``. Some read both
-#   layouts (the v0.1 release line); others, such as the SHA modal_app.py pins,
-#   read only the flat one and name monorepo modules ``us:us/statutes/...``.
+# * Other engines take only ``--program`` and ``--output``. Some read both
+#   layouts (the v0.1.1 and v0.1.2 releases); others, such as the SHA
+#   modal_app.py pins, read only the flat one and name monorepo modules
+#   ``us:us/statutes/...``.
 #
 # So the layout comes from the top level of AXIOM_RULES_US_DIR, the flag from
 # what the engine answers to ``compile --help``, and the engine judges the

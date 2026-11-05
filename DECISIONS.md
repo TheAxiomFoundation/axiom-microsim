@@ -122,3 +122,26 @@ aggregate from slot 1, so the declaration alone is not enough (issue #23).
 from `relation_layout_for_artifact(...)` and builds tuples with
 `layout.tuple_for(owner_id=..., member_id=...)`. Request caches key on
 `layout.slot_kinds`. Never send `"relation_binding": "lenient"`.
+
+## D8 — Compile flags follow the engine; staging follows the rules layout
+
+**Decision.** `_compile` asks each engine binary once, with `compile --help`,
+whether it takes `--rulespec-root`, and passes the staged `rulespec-us` root
+only if it does. The rules layout comes from the top level of
+`AXIOM_RULES_US_DIR`: flat (`statutes/`, `regulations/`, `policies/`) or the
+monorepo's jurisdiction directories (`us/`, `us-co/`). Overrides keep their
+flat-era `repo` and `file_relative`; in the monorepo, `rules-us` resolves under
+`us/` and `rules-us-co` under `us-co/`.
+
+**Why.** Engines come in three kinds (issue #25). f2412104, the SHA
+`modal_app.py` pins, takes no root and reads only the flat layout. The v0.1.1
+and v0.1.2 releases take no root and read both. 0.1.0 and the 0.2.x engines
+require the root and read only the monorepo. So neither `--version` nor the
+version number tells them apart. Probing the flag keeps
+production's command unchanged, and reading the layout from the tree lets a
+pin move need no code switch.
+
+**How to apply.** A new compile site stages a tree, reads it with
+`_scratch_tree` (or `_baseline_rules_tree`), and calls
+`_compile(program, output, tree)`. Don't pass `--rulespec-root`
+unconditionally, and don't infer the layout from the engine.

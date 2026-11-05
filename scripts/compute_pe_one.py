@@ -1,8 +1,9 @@
 """Compute one PolicyEngine aggregate for the /compare endpoint.
 
 Runs in the policyengine.py venv (where ``policyengine_us`` is installed).
-The FastAPI server subprocesses into this script per request — no
-caching, every call recomputes.
+The FastAPI server subprocesses into this script per request. Baseline
+runs are memoised on disk (see ``_baseline_run_cached``); reform sims are
+always recomputed.
 
 Wire shape::
 
@@ -17,7 +18,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pickle
+import re
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -93,9 +97,57 @@ def _build_sim(year: int, overrides: list[dict] | None):
     return sim
 
 
+# Baseline runs are deterministic in (program, state, year) against the
+# pinned dataset, so persist the raw arrays across subprocess invocations.
+# A reform request then builds only the reform sim — roughly halving it.
+# The cache dir is per-container scratch; the startup prewarm repopulates
+# it after a restart. Reusing identical arrays is loss-free.
+_CACHE_DIR = (
+    Path(os.environ.get("AXIOM_PE_CACHE_DIR", tempfile.gettempdir()))
+    / "axiom-pe-baseline-cache"
+)
+
+# `program` and `state` are interpolated into the cache filename below and
+# the file is `pickle.load`-ed, so a value carrying `/` or `..` would both
+# escape the cache dir and choose which pickle we deserialise. The FastAPI
+# layer already allowlists both (axiom_microsim/server.py), but this script
+# is also runnable standalone, so it refuses anything off-shape itself
+# rather than trusting its caller.
+_SAFE_STATE = re.compile(r"\A(?:US|[A-Z]{2})\Z")
+_KNOWN_PROGRAMS = frozenset({"federal-income-tax", "federal-ctc", "co-snap"})
+
+
+def _cache_path(program: str, state: str, year: int) -> Path:
+    if not _SAFE_STATE.match(state or ""):
+        raise ValueError(
+            f"invalid state scope {state!r}; expected 'US' or a 2-letter state code"
+        )
+    if program not in _KNOWN_PROGRAMS:
+        raise ValueError(f"unknown program {program!r}")
+    return _CACHE_DIR / f"{program}-{state}-{int(year)}.pkl"
+
+
+def _baseline_run_cached(program: str, state: str, year: int) -> dict:
+    path = _cache_path(program, state, year)
+    if path.exists():
+        try:
+            with path.open("rb") as f:
+                baseline = pickle.load(f)
+            sys.stderr.write(f"[PE] baseline cache hit: {path.name}\n")
+            return baseline
+        except Exception as exc:  # noqa: BLE001 — corrupt cache → recompute
+            sys.stderr.write(f"[PE] baseline cache unreadable ({exc}); recomputing\n")
+    baseline = _run_program(_build_sim(year, None), program, state, year)
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(f".{os.getpid()}.tmp")
+    with tmp.open("wb") as f:
+        pickle.dump(baseline, f)
+    os.replace(tmp, path)
+    return baseline
+
+
 def run(program: str, state: str, year: int, overrides: list[dict] | None) -> dict:
-    baseline_sim = _build_sim(year, None)
-    baseline = _run_program(baseline_sim, program, state, year)
+    baseline = _baseline_run_cached(program, state, year)
     reform = None
     if overrides:
         reform_sim = _build_sim(year, overrides)

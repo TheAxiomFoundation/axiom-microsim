@@ -38,7 +38,7 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://axiom.org/gallery/microsim"),
   title: "axiom-microsim",
   description:
-    "Microsimulation over Enhanced CPS using axiom-rules-engine — CO SNAP, federal CTC, federal income tax",
+    "Microsimulation over PolicyEngine's Populace dataset using axiom-rules-engine — CO SNAP, federal CTC, federal income tax",
   icons: {
     // basePath does not apply to metadata icon URLs — prefix explicitly.
     icon: [

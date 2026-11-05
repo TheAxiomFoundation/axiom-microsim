@@ -16,10 +16,13 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
+import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import date
+from hashlib import sha256
 from pathlib import Path
 from typing import Literal
 
@@ -418,10 +421,12 @@ def _staged_rules_trees(*, include_co: bool = False) -> Path:
         raise FileNotFoundError(f"rules-us missing at {RULES_US_DIR}")
     if include_co and not RULES_US_CO_DIR.exists():
         raise FileNotFoundError(f"rules-us-co missing at {RULES_US_CO_DIR}")
+    t0 = time.time()
     scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-rules-"))
     shutil.copytree(RULES_US_DIR, scratch / "rulespec-us", symlinks=False)
     if include_co:
         shutil.copytree(RULES_US_CO_DIR, scratch / "rulespec-us-co", symlinks=False)
+    sys.stderr.write(f"[timing] stage rules trees: {time.time() - t0:.2f}s\n")
     return scratch
 
 
@@ -600,6 +605,7 @@ def _execute_ctc(
     cache_key: tuple | None = None,
 ) -> dict[str, np.ndarray]:
     """Build a CompiledExecutionRequest for §24(h) and run it."""
+    t0 = time.time()
     request_bytes = _build_ctc_request_bytes(
         projection,
         period_year,
@@ -607,12 +613,15 @@ def _execute_ctc(
         cache_key=cache_key,
         layout=_ctc_layout(artifact_path),
     )
+    sys.stderr.write(f"[timing] ctc build request: {time.time() - t0:.2f}s\n")
 
+    t0 = time.time()
     proc = subprocess.run(
         [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
         input=request_bytes,
         capture_output=True,
     )
+    sys.stderr.write(f"[timing] ctc engine run: {time.time() - t0:.2f}s\n")
     if proc.returncode != 0:
         raise RuntimeError(f"engine failed:\n{proc.stderr.strip()[:1500]}")
     response = orjson.loads(proc.stdout)
@@ -734,11 +743,13 @@ def _compile(program_yaml: Path, output_json: Path) -> None:
         raise FileNotFoundError(
             f"Engine binary missing at {ENGINE_BIN}. Run scripts/setup_engine.sh once."
         )
+    t0 = time.time()
     subprocess.run(
         [str(ENGINE_BIN), "compile", "--program", str(program_yaml), "--output", str(output_json)],
         check=True,
         capture_output=True,
     )
+    sys.stderr.write(f"[timing] engine compile {program_yaml.name}: {time.time() - t0:.2f}s\n")
 
 
 # --- Execute -----------------------------------------------------------------
@@ -755,12 +766,22 @@ def _execute_compiled(
 ) -> dict[str, np.ndarray]:
     output_ids = [DEFAULT_OUTPUT_IDS[n] for n in output_names]
     layout = _co_snap_layout(artifact_path)
+    bridge_cache_key = None
+    request_bytes = None
     if cache_key is not None:
         cache_key = (*cache_key, layout.slot_kinds)
-    request_bytes: bytes
-    if cache_key is not None and cache_key in _CO_SNAP_REQUEST_CACHE:
-        request_bytes = _CO_SNAP_REQUEST_CACHE[cache_key]
-    else:
+        # Plain inputs are shared across reforms. Bridged inputs include a
+        # deduction computed by this artifact, so keep them under its content
+        # hash (reforms use temporary paths; a baseline can be rebuilt in place).
+        bridge_cache_key = (
+            *cache_key,
+            "shelter-bridge",
+            sha256(artifact_path.read_bytes()).digest(),
+        )
+        request_bytes = _CO_SNAP_REQUEST_CACHE.get(bridge_cache_key)
+        if request_bytes is None:
+            request_bytes = _CO_SNAP_REQUEST_CACHE.get(cache_key)
+    if request_bytes is None:
         request = _build_compiled_request(projection, period_year, output_ids, layout=layout)
         request_bytes = orjson.dumps(request)
         if cache_key is not None:
@@ -775,8 +796,8 @@ def _execute_compiled(
         request_bytes = _build_co_snap_shelter_bridge_request_bytes(
             projection, artifact_path, period_year, output_ids, layout=layout
         )
-        if cache_key is not None:
-            _CO_SNAP_REQUEST_CACHE[cache_key] = request_bytes
+        if bridge_cache_key is not None:
+            _CO_SNAP_REQUEST_CACHE[bridge_cache_key] = request_bytes
         proc = subprocess.run(
             [str(ENGINE_BIN), "run-compiled", "--artifact", str(artifact_path)],
             input=request_bytes,

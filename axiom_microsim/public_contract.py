@@ -12,7 +12,17 @@ from decimal import Decimal
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
+
+from .data.ecps_loader import STATE_FIPS
 
 if TYPE_CHECKING:
     from .run.microsim import ParameterOverride
@@ -28,6 +38,33 @@ SNAP_MAX = "policies/usda/snap/fy-2026-cola/maximum-allotments.yaml"
 SNAP_DEDUCTIONS = "policies/usda/snap/fy-2026-cola/deductions.yaml"
 TAX_BRACKETS = "policies/irs/rev-proc-2025-32/income-tax-brackets.yaml"
 CTC = "statutes/26/24/h.yaml"
+
+
+# --- State scope validation --------------------------------------------------
+# Every endpoint takes a `state` scope. That value is not just a filter: it
+# reaches a PE subprocess argv and, in ``scripts/compute_pe_one.py``, a
+# filesystem cache path that is ``pickle.load``-ed. Free-form text there
+# would let a caller escape the cache dir (``../``) and choose the pickle
+# the server unpickles — remote code execution on a public, CORS-``*``
+# endpoint. So the scope is an allowlist, never a string.
+#
+# ``US`` is nationwide; everything else must be one of the 50 states + DC
+# (``STATE_FIPS`` is the loader's own hand-encoded Census FIPS table).
+
+VALID_STATE_SCOPES = frozenset({"US", *STATE_FIPS})
+
+
+def _validate_state_scope(value: str) -> str:
+    """Normalise and allowlist a state scope; raise so Pydantic returns 422."""
+    scope = value.strip().upper()
+    if scope not in VALID_STATE_SCOPES:
+        raise ValueError(
+            f"unknown state scope {value!r}; expected 'US' or a 2-letter state/DC code"
+        )
+    return scope
+
+
+StateScope = Annotated[str, AfterValidator(_validate_state_scope)]
 
 
 @dataclass(frozen=True)
@@ -209,7 +246,7 @@ class OverrideIn(PublicModel):
 
 class MicrosimRequest(PublicModel):
     program: Program = "co-snap"
-    state: str = "CO"
+    state: StateScope = "CO"
     year: int = 2026
     overrides: list[OverrideIn] = Field(default_factory=list, max_length=MAX_OVERRIDES)
 
@@ -259,7 +296,7 @@ class PeOverrideIn(PublicModel):
 
 class CompareRequest(PublicModel):
     program: Program
-    state: str = "US"
+    state: StateScope = "US"
     year: int = 2026
     overrides: list[PeOverrideIn] = Field(default_factory=list, max_length=MAX_OVERRIDES)
 

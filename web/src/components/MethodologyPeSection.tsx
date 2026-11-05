@@ -66,17 +66,19 @@ export function MethodologyPeSection() {
   return (
     <div className="space-y-6">
       <p className="editorial">
-        Each row below runs PolicyEngine fresh against the same{" "}
+        Each row below runs PolicyEngine against the same{" "}
         <code className="font-mono text-[0.85em] text-accent">
-          enhanced_cps_2024
+          populace_us_2024
         </code>{" "}
         dataset (uprated to 2026), aggregating the same variable Axiom
-        outputs. No caching — every click re-runs PE through{" "}
+        outputs, through{" "}
         <code className="font-mono text-[0.85em] text-accent">
           policyengine_us.Microsimulation
         </code>
-        . First click in a session is slowest (PE warms its data dir);
-        subsequent clicks land in seconds.
+        . Each distinct program-and-reform combination is computed once
+        server-side and cached; default baselines are precomputed at
+        startup, so those land instantly. The first run of a new reform
+        recomputes PE from scratch and can take several minutes.
       </p>
       {SCOPES.map((s) => (
         <PeRow key={s.id} scope={s} />

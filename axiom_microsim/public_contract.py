@@ -1,8 +1,12 @@
 """Pure, finite policy-lever validation for the two public POST routes.
 
-This module deliberately does not read rule files. The catalogue is pinned to
-the web sliders and rules-us revision in modal_app.py; see ISSUE_10_REPORT.md
-for the source of each bound. Local ParameterOverride remains unrestricted.
+This module deliberately does not read rule files. Exact targets and kinds keep
+callers within the web sliders; their numeric ranges bound reform size. Uniform
+table scaling preserves threshold order, and formula scaling reads the rule's own
+numeric literal. Caller formula text and individual table cells are refused.
+The catalogue follows web/src/lib/levers.ts and the rules-us pin in modal_app.py;
+DECISIONS.md records each bound and its update checks. Local ParameterOverride
+remains unrestricted.
 """
 
 from __future__ import annotations
@@ -73,54 +77,45 @@ class LeverPolicy:
     kinds: tuple[str, ...]
     minimum: float
     maximum: float
-    # Baselines give both exact allowed keys and per-key set_values bounds.
-    rows: tuple[float, ...] = ()
-    scalar_baseline: int = 0
 
 
 ALLOWED_TARGETS = MappingProxyType(
     {
         ("rules-us", SNAP_MAX, "snap_maximum_allotment_table"): LeverPolicy(
             "co-snap",
-            ("scale_values", "set_values"),
+            ("scale_values",),
             0.5,
             2,
-            (298, 546, 785, 994, 1183, 1421, 1571, 1789),
         ),
         ("rules-us", SNAP_MAX, "snap_maximum_allotment_additional_member"): LeverPolicy(
             "co-snap",
-            ("scale_scalar",),
+            ("scale_formula",),
             0.5,
             2,
-            scalar_baseline=218,
         ),
         ("rules-us", SNAP_DEDUCTIONS, "snap_standard_deduction_48_states_dc_table"): LeverPolicy(
             "co-snap",
-            ("scale_values", "set_values"),
+            ("scale_values",),
             0,
             2,
-            (209, 209, 209, 223, 261, 299),
         ),
         ("rules-us", TAX_BRACKETS, "income_tax_bracket_rates"): LeverPolicy(
             "federal-income-tax",
-            ("scale_values", "set_values"),
+            ("scale_values",),
             0.5,
             1.5,
-            (0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37),
         ),
         ("rules-us", TAX_BRACKETS, "income_tax_bracket_thresholds_joint"): LeverPolicy(
             "federal-income-tax",
-            ("scale_values", "set_values"),
+            ("scale_values",),
             0.5,
             2,
-            (24800, 100800, 211400, 403550, 512450, 768700),
         ),
         ("rules-us", TAX_BRACKETS, "income_tax_bracket_thresholds_single"): LeverPolicy(
             "federal-income-tax",
-            ("scale_values", "set_values"),
+            ("scale_values",),
             0.5,
             2,
-            (12400, 50400, 105700, 201775, 256225, 640600),
         ),
         ("rules-us", CTC, "ctc_child_amount_under_subsection_h"): LeverPolicy(
             "federal-ctc",
@@ -144,6 +139,10 @@ ALLOWED_TARGETS = MappingProxyType(
 )
 
 
+# The year web/src/app/page.tsx sends; DECISIONS.md D8 records why no other year runs.
+PublicYear = Literal[2026]
+
+
 class PublicModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -152,9 +151,8 @@ class OverrideIn(PublicModel):
     repo: Literal["rules-us"]
     file_relative: str = Field(max_length=200)
     parameter: str = Field(max_length=100)
-    patch_kind: Literal["scale_values", "set_values", "scale_scalar", "set_scalar"]
+    patch_kind: Literal["scale_values", "scale_formula", "set_scalar"]
     multiplier: Number | None = None
-    values: dict[int, Number] | None = Field(default=None, max_length=8)
     value: Number | None = None
 
     @field_validator("file_relative")
@@ -180,29 +178,13 @@ class OverrideIn(PublicModel):
         policy = ALLOWED_TARGETS[self.target]
         if self.patch_kind not in policy.kinds:
             raise ValueError("patch_kind is not allowed for parameter")
-        payload = (
-            "values"
-            if self.patch_kind == "set_values"
-            else "value"
-            if self.patch_kind == "set_scalar"
-            else "multiplier"
-        )
-        unexpected = (self.model_fields_set & {"multiplier", "values", "value"}) - {payload}
+        payload = "value" if self.patch_kind == "set_scalar" else "multiplier"
+        unexpected = (self.model_fields_set & {"multiplier", "value"}) - {payload}
         if unexpected:
             raise ValueError(f"{', '.join(sorted(unexpected))} is not allowed for patch_kind")
-        if payload == "values":
-            if not self.values:
-                raise ValueError("values must contain at least one allowed key")
-            for key, value in self.values.items():
-                if key < 1 or key > len(policy.rows):
-                    raise ValueError("values contains a key not allowed for parameter")
-                baseline = policy.rows[key - 1]
-                if not baseline * policy.minimum <= value <= baseline * policy.maximum:
-                    raise ValueError(f"values[{key}] is outside the allowed range")
-        else:
-            value = getattr(self, payload)
-            if value is None or not policy.minimum <= value <= policy.maximum:
-                raise ValueError(f"{payload} must be between {policy.minimum} and {policy.maximum}")
+        value = getattr(self, payload)
+        if value is None or not policy.minimum <= value <= policy.maximum:
+            raise ValueError(f"{payload} must be between {policy.minimum} and {policy.maximum}")
         return self
 
     def to_runtime(self) -> ParameterOverride:
@@ -210,29 +192,13 @@ class OverrideIn(PublicModel):
         # string can become a formula; the runtime's local API stays unchanged.
         from .run.microsim import ParameterOverride
 
-        if self.patch_kind in {"set_scalar", "scale_scalar"}:
-            value = (
-                Decimal(str(self.value))
-                if self.patch_kind == "set_scalar"
-                else Decimal(ALLOWED_TARGETS[self.target].scalar_baseline)
-                * Decimal(str(self.multiplier))
-            )
+        if self.patch_kind == "set_scalar":
             return ParameterOverride(
                 repo=self.repo,
                 file_relative=self.file_relative,
                 parameter=self.parameter,
                 patch_kind="set_formula",
-                formula=format(value, "f"),
-            )
-        if self.patch_kind == "scale_values" and self.multiplier == 0:
-            # The local legacy patcher uses `multiplier or 1.0`. Express the
-            # public zero endpoint explicitly, without changing that local API.
-            return ParameterOverride(
-                repo=self.repo,
-                file_relative=self.file_relative,
-                parameter=self.parameter,
-                patch_kind="set_values",
-                values={key: 0.0 for key in range(1, len(ALLOWED_TARGETS[self.target].rows) + 1)},
+                formula=format(Decimal(str(self.value)), "f"),
             )
         return ParameterOverride(
             repo=self.repo,
@@ -240,18 +206,19 @@ class OverrideIn(PublicModel):
             parameter=self.parameter,
             patch_kind=self.patch_kind,
             multiplier=self.multiplier,
-            values=self.values,
         )
 
 
 class MicrosimRequest(PublicModel):
     program: Program = "co-snap"
     state: StateScope = "CO"
-    year: int = 2026
+    year: PublicYear = 2026
     overrides: list[OverrideIn] = Field(default_factory=list, max_length=MAX_OVERRIDES)
 
     @model_validator(mode="after")
     def overrides_for_program(self) -> MicrosimRequest:
+        if self.program == "co-snap" and self.state != "CO":
+            raise ValueError("state must be CO for co-snap")
         seen = set()
         for override in self.overrides:
             if ALLOWED_TARGETS[override.target].program != self.program:
@@ -297,11 +264,13 @@ class PeOverrideIn(PublicModel):
 class CompareRequest(PublicModel):
     program: Program
     state: StateScope = "US"
-    year: int = 2026
+    year: PublicYear = 2026
     overrides: list[PeOverrideIn] = Field(default_factory=list, max_length=MAX_OVERRIDES)
 
     @model_validator(mode="after")
     def overrides_for_program(self) -> CompareRequest:
+        if self.program == "co-snap" and self.state != "CO":
+            raise ValueError("state must be CO for co-snap")
         seen = set()
         for override in self.overrides:
             if PE_ALLOWED_PATHS[override.path][0] != self.program:

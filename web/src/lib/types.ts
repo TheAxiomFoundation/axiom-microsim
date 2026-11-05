@@ -67,9 +67,8 @@ export interface Override {
   repo: "rules-us";
   file_relative: string;
   parameter: string;
-  patch_kind: "scale_values" | "set_values" | "scale_scalar" | "set_scalar";
+  patch_kind: "scale_values" | "scale_formula" | "set_scalar";
   multiplier?: number;
-  values?: Record<number, number>;
   value?: number;
 }
 

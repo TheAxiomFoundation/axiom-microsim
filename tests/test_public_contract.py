@@ -13,7 +13,6 @@ import json
 import os
 import re
 import subprocess
-from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -95,7 +94,9 @@ def test_refuses_non_allowlisted_targets(before_work: list[str], field: str, val
     _refuse(before_work, {**VALID, field: value}, field)
 
 
-@pytest.mark.parametrize("kind", ["set_formula", "scale_formula", "set_scalar", "scale_scalar"])
+@pytest.mark.parametrize(
+    "kind", ["set_formula", "set_values", "scale_formula", "set_scalar", "scale_scalar"]
+)
 def test_refuses_disallowed_patch_kind(before_work: list[str], kind: str) -> None:
     _refuse(before_work, {**VALID, "patch_kind": kind}, "patch_kind")
 
@@ -115,21 +116,43 @@ def test_refuses_out_of_range_multiplier(before_work: list[str], multiplier: flo
             "patch_kind": "set_scalar",
             "value": 6001,
         },
-        {
-            **{key: value for key, value in VALID.items() if key != "multiplier"},
-            "patch_kind": "set_values",
-            "values": {1: 597},
-        },
-        {
-            **{key: value for key, value in VALID.items() if key != "multiplier"},
-            "patch_kind": "set_values",
-            "values": {99: 300},
-        },
     ],
-    ids=["scalar-bounds", "table-row-bounds", "unknown-table-key"],
+    ids=["scalar-bounds"],
 )
 def test_refuses_out_of_range_values(before_work: list[str], override: dict[str, Any]) -> None:
     _refuse(before_work, override, "value")
+
+
+@pytest.mark.parametrize("route", ["/microsim", "/compare"])
+@pytest.mark.parametrize("year", [2018, 2025, 2027, 0, -1, "2026", 2026.5, None])
+def test_refuses_every_year_but_2026(before_work: list[str], route: str, year: Any) -> None:
+    response = TestClient(server.app, raise_server_exceptions=False).post(
+        route, json={"program": "co-snap", "state": "CO", "year": year}
+    )
+    assert response.status_code == 422, response.text
+    assert "year" in response.text, response.text
+    assert not before_work
+
+
+@pytest.mark.parametrize("model", [server.MicrosimRequest, server.CompareRequest])
+def test_public_routes_default_to_the_year_the_web_sends(model: Any) -> None:
+    assert model.model_validate({"program": "co-snap", "state": "CO"}).year == 2026
+
+
+@settings(max_examples=100, deadline=None)
+@given(
+    model=st.sampled_from([server.MicrosimRequest, server.CompareRequest]),
+    year=st.integers(min_value=-(10**6), max_value=10**6),
+)
+@example(model=server.MicrosimRequest, year=2026)
+@example(model=server.CompareRequest, year=2026)
+def test_invariant_public_routes_accept_only_2026(model: Any, year: int) -> None:
+    try:
+        request = model.model_validate({"program": "co-snap", "state": "CO", "year": year})
+    except ValidationError:
+        assert year != 2026
+    else:
+        assert year == 2026 and request.year == 2026
 
 
 @pytest.mark.parametrize("route", ["/microsim", "/compare"])
@@ -262,7 +285,7 @@ def test_refuses_non_numeric_or_nonfinite_payload(value: Any, model: Any) -> Non
 
 
 @pytest.mark.parametrize("literal", ["1e309", "NaN", "Infinity", "-Infinity"])
-@pytest.mark.parametrize("position", ["multiplier", "table-row", "scalar", "pe-value"])
+@pytest.mark.parametrize("position", ["multiplier", "formula-scale", "scalar", "pe-value"])
 def test_refuses_nonfinite_json_before_work(
     before_work: list[str], literal: str, position: str
 ) -> None:
@@ -281,11 +304,12 @@ def test_refuses_nonfinite_json_before_work(
             "patch_kind": "set_scalar",
             "value": "NONFINITE",
         }
-    elif position == "table-row":
+    elif position == "formula-scale":
         override = {
-            **{key: value for key, value in VALID.items() if key != "multiplier"},
-            "patch_kind": "set_values",
-            "values": {1: "NONFINITE"},
+            **VALID,
+            "parameter": "snap_maximum_allotment_additional_member",
+            "patch_kind": "scale_formula",
+            "multiplier": "NONFINITE",
         }
     else:
         override = {**VALID, "multiplier": "NONFINITE"}
@@ -328,21 +352,21 @@ def test_scalar_runtime_conversion_preserves_numeric_literal(value: float) -> No
 
 
 @pytest.mark.parametrize("multiplier", [0.5, 1, 1.01, 2])
-def test_scale_scalar_runtime_conversion_is_server_defined_literal(multiplier: float) -> None:
+def test_scale_formula_runtime_conversion_preserves_multiplier(multiplier: float) -> None:
     override = server.OverrideIn.model_validate(
         {
             **VALID,
             "parameter": "snap_maximum_allotment_additional_member",
-            "patch_kind": "scale_scalar",
+            "patch_kind": "scale_formula",
             "multiplier": multiplier,
         }
     ).to_runtime()
-    assert override.patch_kind == "set_formula"
-    assert re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", override.formula)
-    assert Decimal(override.formula) == Decimal(218) * Decimal(str(multiplier))
+    assert override.patch_kind == "scale_formula"
+    assert override.multiplier == multiplier
+    assert override.formula is None
 
 
-def test_zero_table_scale_runtime_conversion_produces_zero_rows() -> None:
+def test_zero_table_scale_runtime_conversion_preserves_multiplier() -> None:
     override = server.OverrideIn.model_validate(
         {
             **VALID,
@@ -351,29 +375,18 @@ def test_zero_table_scale_runtime_conversion_produces_zero_rows() -> None:
             "multiplier": 0,
         }
     ).to_runtime()
-    assert override.patch_kind == "set_values"
-    assert override.values == dict.fromkeys(range(1, 7), 0)
+    assert override.patch_kind == "scale_values"
+    assert override.multiplier == 0
+    assert override.values is None
 
 
-@pytest.mark.parametrize("values", [{"1": 149, "8": 3578}, {"1": 596, "8": 894.5}])
-def test_accepts_bounded_partial_table_values(values: dict[str, float]) -> None:
-    override = server.OverrideIn.model_validate(
-        {
-            **{key: value for key, value in VALID.items() if key != "multiplier"},
-            "patch_kind": "set_values",
-            "values": values,
-        }
-    )
-    assert override.to_runtime().values == {int(key): value for key, value in values.items()}
-
-
-def test_public_schema_has_no_formula_fields_or_patch_kinds() -> None:
+def test_public_schema_has_only_catalogued_kinds_and_no_formula_or_values_fields() -> None:
     schema = server.OverrideIn.model_json_schema()
     assert "formula" not in schema["properties"]
+    assert "values" not in schema["properties"]
     assert set(schema["properties"]["patch_kind"]["enum"]) == {
         "scale_values",
-        "set_values",
-        "scale_scalar",
+        "scale_formula",
         "set_scalar",
     }
     assert "formula" not in server.PeOverrideIn.model_json_schema()["properties"]
@@ -410,7 +423,8 @@ def _frontend_extremes() -> list[dict[str, Any]]:
     source = source.replace("export const PROGRAMS", "const PROGRAMS")
     source += """
 console.log(JSON.stringify(PROGRAMS.flatMap(p => p.levers.flatMap(l => [l.min, l.max].map(v => ({
-  program: p.id, id: l.id, value: v, overrides: l.build(v), pe: l.peBuild?.(v) ?? []
+  program: p.id, state: p.default_state, id: l.id, value: v,
+  overrides: l.build(v), pe: l.peBuild?.(v) ?? []
 }))))));
 """
     output = subprocess.run(
@@ -441,20 +455,34 @@ def test_every_frontend_lever_accepts_both_extremes() -> None:
     combined: dict[str, list[dict[str, Any]]] = {}
     for case in extremes:
         request = server.MicrosimRequest.model_validate(
-            {"program": case["program"], "overrides": case["overrides"]}
+            {
+                "program": case["program"],
+                "state": case["state"],
+                "overrides": case["overrides"],
+            }
         )
         assert len(request.overrides) == len(case["overrides"]), case
-        server.CompareRequest.model_validate({"program": case["program"], "overrides": case["pe"]})
+        server.CompareRequest.model_validate(
+            {"program": case["program"], "state": case["state"], "overrides": case["pe"]}
+        )
         # Every slider can be changed simultaneously in the UI.
         combined.setdefault(case["program"], []).append(case)
     for program, cases in combined.items():
         for parity in (0, 1):
             selected = cases[parity::2]
             server.MicrosimRequest.model_validate(
-                {"program": program, "overrides": [o for c in selected for o in c["overrides"]]}
+                {
+                    "program": program,
+                    "state": selected[0]["state"],
+                    "overrides": [o for c in selected for o in c["overrides"]],
+                }
             )
             server.CompareRequest.model_validate(
-                {"program": program, "overrides": [o for c in selected for o in c["pe"]]}
+                {
+                    "program": program,
+                    "state": selected[0]["state"],
+                    "overrides": [o for c in selected for o in c["pe"]],
+                }
             )
 
 
@@ -468,6 +496,30 @@ _parameter_strings = st.one_of(
 _candidate = st.fixed_dictionaries(
     {"file_relative": _target_strings, "parameter": _parameter_strings},
 ).map(lambda fields: {**VALID, **fields})
+
+
+@st.composite
+def _catalogued_override(draw: st.DrawFn) -> dict[str, Any]:
+    target, policy = draw(st.sampled_from(list(contract.ALLOWED_TARGETS.items())))
+    kind = draw(st.sampled_from(policy.kinds))
+    return {
+        "repo": target[0],
+        "file_relative": target[1],
+        "parameter": target[2],
+        "patch_kind": kind,
+        "value" if kind == "set_scalar" else "multiplier": draw(
+            st.floats(min_value=policy.minimum, max_value=policy.maximum)
+        ),
+    }
+
+
+_candidate = st.one_of(
+    _candidate,
+    _catalogued_override(),
+    _catalogued_override().flatmap(
+        lambda override: st.text().map(lambda kind: {**override, "patch_kind": kind})
+    ),
+)
 _pe_candidate = st.fixed_dictionaries(
     {
         "path": st.one_of(st.just(PE_VALID["path"]), st.text()),
@@ -478,29 +530,72 @@ _pe_candidate = st.fixed_dictionaries(
 
 @settings(max_examples=100, deadline=None)
 @given(
-    overrides=st.lists(_candidate, max_size=18), pe_overrides=st.lists(_pe_candidate, max_size=18)
+    overrides=st.lists(_candidate, max_size=18),
+    pe_overrides=st.lists(_pe_candidate, max_size=18),
+    program=st.sampled_from(["co-snap", "federal-income-tax", "federal-ctc"]),
 )
-@example(overrides=[VALID], pe_overrides=[PE_VALID])
+@example(overrides=[VALID], pe_overrides=[], program="co-snap")
+@example(overrides=[{**VALID, "patch_kind": "set_values"}], pe_overrides=[], program="co-snap")
+@example(overrides=[], pe_overrides=[PE_VALID], program="federal-ctc")
 def test_invariant_accepted_requests_only_name_allowlisted_targets(
-    overrides: list[dict[str, Any]], pe_overrides: list[dict[str, Any]]
+    overrides: list[dict[str, Any]], pe_overrides: list[dict[str, Any]], program: str
 ) -> None:
     try:
-        request = server.MicrosimRequest.model_validate({"overrides": overrides})
+        request = server.MicrosimRequest.model_validate(
+            {"program": program, "state": "CO", "overrides": overrides}
+        )
     except ValidationError:
         pass
     else:
         assert all(
-            (o.repo, o.file_relative, o.parameter) in contract.ALLOWED_TARGETS
+            o.target in contract.ALLOWED_TARGETS
+            and o.patch_kind in contract.ALLOWED_TARGETS[o.target].kinds
+            and o.patch_kind in {"scale_values", "scale_formula", "set_scalar"}
+            and contract.ALLOWED_TARGETS[o.target].program == program
             for o in request.overrides
         )
     try:
         pe_request = server.CompareRequest.model_validate(
-            {"program": "federal-ctc", "overrides": pe_overrides}
+            {"program": program, "state": "CO", "overrides": pe_overrides}
         )
     except ValidationError:
         pass
     else:
-        assert all(o.path in contract.PE_ALLOWED_PATHS for o in pe_request.overrides)
+        assert all(
+            o.path in contract.PE_ALLOWED_PATHS and contract.PE_ALLOWED_PATHS[o.path][0] == program
+            for o in pe_request.overrides
+        )
+
+
+@settings(max_examples=50, deadline=None)
+@given(override=_catalogued_override(), formula=st.one_of(st.none(), st.text()))
+def test_invariant_no_public_kind_accepts_caller_formula(
+    override: dict[str, Any], formula: str | None
+) -> None:
+    assert server.OverrideIn.model_validate(override)
+    with pytest.raises(ValidationError, match="formula"):
+        server.OverrideIn.model_validate({**override, "formula": formula})
+    with pytest.raises(ValidationError, match="formula"):
+        server.PeOverrideIn.model_validate({**PE_VALID, "formula": formula})
+
+
+@settings(max_examples=50, deadline=None)
+@given(override=_catalogued_override())
+def test_invariant_catalogued_payload_converts_without_caller_formula(
+    override: dict[str, Any],
+) -> None:
+    public = server.OverrideIn.model_validate(override)
+    patch = public.to_runtime()
+    assert (patch.repo, patch.file_relative, patch.parameter) == public.target
+    if public.patch_kind == "set_scalar":
+        assert patch.patch_kind == "set_formula"
+        assert re.fullmatch(r"-?[0-9]+(?:\.[0-9]+)?", patch.formula)
+        assert float(patch.formula) == public.value
+    else:
+        assert patch.patch_kind == public.patch_kind
+        assert patch.multiplier == public.multiplier
+        assert patch.formula is None
+        assert patch.values is None
 
 
 @settings(max_examples=100, deadline=None)

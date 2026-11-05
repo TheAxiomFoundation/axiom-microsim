@@ -12,6 +12,11 @@ Vercel reads the Modal URL from `AXIOM_MICROSIM_URL`. Locally, when that
 env var points at a `uvicorn` process on `:8765`, `npm run dev` works
 without Modal.
 
+Deploy Modal and Vercel together when updating the public lever contract.
+The new backend refuses the old frontend's formula-text patches, and the backend
+predating the catalogue refuses the new frontend's `set_scalar` patches, so a
+slider change can return 422 while the two differ.
+
 ## 1. Deploy the engine to Modal
 
 ```bash
@@ -62,14 +67,26 @@ modal volume put axiom-microsim-populace /tmp/pop/populace_us_2024.h5
 > the deprecated `policyengine-us-data`) is retired — do not repopulate it.
 > The image sets `AXIOM_POPULACE_US_H5` to the mounted populace file.
 
-Smoke test the full path:
+After both deploys, smoke test each POST route with a catalogued CTC override
+(a $3,000 child amount), and check the read-only routes. Each command should
+return HTTP 200; the POST responses should include reform results:
 
 ```bash
-curl -sS -X POST https://policyengine--axiom-microsim-web.modal.run/microsim \
+curl --fail-with-body -sS -X POST https://policyengine--axiom-microsim-web.modal.run/microsim \
   -H "Content-Type: application/json" \
-  -d '{"program":"federal-ctc","state":"US","year":2026,"overrides":[]}' \
-  | python3 -c "import json,sys; d=json.load(sys.stdin); print(f\"OK: \${d['baseline']['annual_cost']/1e9:.1f}B\")"
+  -d '{"program":"federal-ctc","state":"US","year":2026,"overrides":[{"repo":"rules-us","file_relative":"statutes/26/24/h.yaml","parameter":"ctc_child_amount_under_subsection_h","patch_kind":"set_scalar","value":3000}]}'
+
+curl --fail-with-body -sS -X POST https://policyengine--axiom-microsim-web.modal.run/compare \
+  -H "Content-Type: application/json" \
+  -d '{"program":"federal-ctc","state":"US","year":2026,"overrides":[{"path":"gov.irs.credits.ctc.amount.base[0].amount","value":3000}]}'
+
+curl --fail-with-body -sS https://policyengine--axiom-microsim-web.modal.run/health
+curl --fail-with-body -sS 'https://policyengine--axiom-microsim-web.modal.run/ecps-stats?program=federal-ctc&state=US'
 ```
+
+Repeat the POST checks through the deployed site's
+`/gallery/microsim/api/microsim` and `/gallery/microsim/api/compare` proxies.
+`/health` and `/ecps-stats` do not accept overrides.
 
 To re-deploy after a `rules-us` change, bump `ENGINE_VERSION` in
 `modal_app.py` and run `modal deploy` again.

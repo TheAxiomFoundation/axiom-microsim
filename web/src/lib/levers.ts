@@ -189,7 +189,7 @@ const COLORADO_SNAP: Program = {
           repo: "rules-us",
           file_relative: SNAP_MAX_ALLOTMENT,
           parameter: "snap_maximum_allotment_additional_member",
-          patch_kind: "scale_scalar",
+          patch_kind: "scale_formula",
           multiplier: m,
         },
       ],

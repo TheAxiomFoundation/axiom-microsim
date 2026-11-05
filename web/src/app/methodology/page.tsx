@@ -239,7 +239,7 @@ function Pipeline() {
     {
       eyebrow: "03",
       title: "Patch",
-      body: "Reform only: copy rules-us trees to a temp dir, apply ParameterOverride patches to the YAMLs (scale_values / set_values / scale_formula / set_formula).",
+      body: "Reform only: validate numeric policy levers, copy rules-us trees to a temp dir, and apply the allowed table or scalar changes to the YAMLs.",
     },
     {
       eyebrow: "04",

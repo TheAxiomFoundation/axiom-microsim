@@ -64,13 +64,13 @@ export interface MicrosimResponse {
 }
 
 export interface Override {
-  repo: "rules-us" | "rules-us-co";
+  repo: "rules-us";
   file_relative: string;
   parameter: string;
-  patch_kind: "scale_values" | "set_values" | "scale_formula" | "set_formula";
+  patch_kind: "scale_values" | "set_values" | "scale_scalar" | "set_scalar";
   multiplier?: number;
   values?: Record<number, number>;
-  formula?: string;
+  value?: number;
 }
 
 export interface MicrosimRequest {

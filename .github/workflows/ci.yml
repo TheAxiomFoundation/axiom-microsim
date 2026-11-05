@@ -15,6 +15,11 @@ jobs:
           repository: TheAxiomFoundation/axiom-rules-engine
           path: _axiom/axiom-rules-engine
       - uses: astral-sh/setup-uv@v8.1.0
+      # Public-contract tests execute the checked-in frontend lever builders.
+      - uses: actions/setup-node@v6.0.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
       - run: uv python install 3.14
       # `uv sync` resolves from uv.lock, so the linter version is pinned. The
       # previous `uv pip install -e ".[dev]"` ignored the lockfile and re-resolved

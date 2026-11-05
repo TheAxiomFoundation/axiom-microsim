@@ -14,13 +14,18 @@ from __future__ import annotations
 import json
 import os
 import subprocess as _subprocess
+from contextlib import contextmanager
 from pathlib import Path as _Path
+from threading import BoundedSemaphore
 from typing import Literal
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .aggregate.cost import aggregate as aggregate_cost
 from .aggregate.distribution import by_household_income_decile
@@ -36,37 +41,16 @@ from .run.microsim import (
     run_federal_ctc,
     run_federal_income_tax,
 )
+from .public_contract import (
+    MAX_BODY_BYTES,
+    CompareRequest,
+    MicrosimRequest,
+    OverrideIn,  # noqa: F401 — retain the server model import surface
+    PeOverrideIn,  # noqa: F401
+)
 
 
 # --- Request / response models ----------------------------------------------
-
-
-class OverrideIn(BaseModel):
-    repo: Literal["rules-us", "rules-us-co"]
-    file_relative: str
-    parameter: str
-    patch_kind: Literal["scale_values", "set_values", "scale_formula", "set_formula"]
-    multiplier: float | None = None
-    values: dict[int, float] | None = None
-    formula: str | None = None
-
-    def to_runtime(self) -> ParameterOverride:
-        return ParameterOverride(
-            repo=self.repo,
-            file_relative=self.file_relative,
-            parameter=self.parameter,
-            patch_kind=self.patch_kind,
-            multiplier=self.multiplier,
-            values=self.values,
-            formula=self.formula,
-        )
-
-
-class MicrosimRequest(BaseModel):
-    program: Literal["co-snap", "federal-income-tax", "federal-ctc"] = "co-snap"
-    state: str = "CO"
-    year: int = 2026
-    overrides: list[OverrideIn] = Field(default_factory=list)
 
 
 # --- Shared output shapes ---------------------------------------------------
@@ -125,13 +109,83 @@ class MicrosimResponse(BaseModel):
 
 # --- App --------------------------------------------------------------------
 
+
+class PublicBodyLimit:
+    """Count actual ASGI bytes before parsing, including chunked request bodies."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope.get("path") not in {"/microsim", "/compare"}:
+            await self.app(scope, receive, send)
+            return
+
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            chunk = message.get("body", b"")
+            if len(body) + len(chunk) > MAX_BODY_BYTES:
+                response = JSONResponse(
+                    {"detail": f"body exceeds {MAX_BODY_BYTES} bytes"}, status_code=413
+                )
+                await response(scope, receive, send)
+                return
+            body.extend(chunk)
+            if not message.get("more_body", False):
+                break
+
+        delivered = False
+
+        async def bounded_receive():
+            nonlocal delivered
+            if delivered:
+                return await receive()
+            delivered = True
+            return {"type": "http.request", "body": bytes(body), "more_body": False}
+
+        await self.app(scope, bounded_receive, send)
+
+
+# One public heavy request per worker process, with no waiting queue. This
+# covers native dense compilation too, and leaves local runners unrestricted.
+_PUBLIC_WORK = BoundedSemaphore(1)
+
+
+@contextmanager
+def _public_work_slot():
+    if not _PUBLIC_WORK.acquire(blocking=False):
+        raise HTTPException(503, "public simulation capacity is busy; retry later")
+    try:
+        yield
+    finally:
+        _PUBLIC_WORK.release()
+
+
 app = FastAPI(title="axiom-microsim", version="0.2.0")
+app.add_middleware(PublicBodyLimit)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def public_validation_error(_request, exc: RequestValidationError):
+    # Nonfinite JSON numbers must get a 422 too. Echoing their raw input in
+    # FastAPI's default error response would itself fail JSON serialization.
+    errors = [{key: error[key] for key in ("type", "loc", "msg")} for error in exc.errors()]
+    # Escape arbitrary dictionary/extra-field names, including lone Unicode
+    # surrogates in JSON, so the refusal response always remains encodable.
+    return Response(
+        json.dumps({"detail": errors}, ensure_ascii=True, allow_nan=False),
+        status_code=422,
+        media_type="application/json",
+    )
 
 
 @app.get("/health")
@@ -248,18 +302,6 @@ _PE_SCRIPT = _Path(
 )
 
 
-class PeOverrideIn(BaseModel):
-    path: str
-    value: float
-
-
-class CompareRequest(BaseModel):
-    program: Literal["co-snap", "federal-income-tax", "federal-ctc"]
-    state: str = "US"
-    year: int = 2026
-    overrides: list[PeOverrideIn] = Field(default_factory=list)
-
-
 class PovertyOut(BaseModel):
     population_weighted: float
     in_poverty_weighted: float
@@ -292,6 +334,11 @@ class CompareResponse(BaseModel):
 
 @app.post("/compare", response_model=CompareResponse)
 def compare(req: CompareRequest) -> CompareResponse:
+    with _public_work_slot():
+        return _compare(req)
+
+
+def _compare(req: CompareRequest) -> CompareResponse:
     if not _PE_PYTHON.exists():
         raise HTTPException(
             500,
@@ -348,14 +395,15 @@ def compare(req: CompareRequest) -> CompareResponse:
 
 @app.post("/microsim", response_model=MicrosimResponse)
 def microsim(req: MicrosimRequest) -> MicrosimResponse:
-    overrides = [o.to_runtime() for o in req.overrides]
-    if req.program == "co-snap":
-        return _run_co_snap(req, overrides)
-    if req.program == "federal-income-tax":
-        return _run_federal_income_tax(req, overrides)
-    if req.program == "federal-ctc":
-        return _run_federal_ctc(req, overrides)
-    raise HTTPException(400, f"unknown program {req.program!r}")
+    with _public_work_slot():
+        overrides = [o.to_runtime() for o in req.overrides]
+        if req.program == "co-snap":
+            return _run_co_snap(req, overrides)
+        if req.program == "federal-income-tax":
+            return _run_federal_income_tax(req, overrides)
+        if req.program == "federal-ctc":
+            return _run_federal_ctc(req, overrides)
+        raise HTTPException(400, f"unknown program {req.program!r}")
 
 
 # --- co-snap path -----------------------------------------------------------

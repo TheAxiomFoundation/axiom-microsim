@@ -233,8 +233,8 @@ def test_baseline_cache_is_bounded():
         server._cached_baseline("federal-ctc", "US", year, lambda y=year: {"year": y})
 
     assert len(server._BASELINE_RESULT_CACHE) == server._CACHE_MAX_ENTRIES
-    assert ("federal-ctc", "US", 0) not in server._BASELINE_RESULT_CACHE
-    assert ("federal-ctc", "US", overflow - 1) in server._BASELINE_RESULT_CACHE
+    assert not any(k[:3] == ("federal-ctc", "US", 0) for k in server._BASELINE_RESULT_CACHE)
+    assert any(k[:3] == ("federal-ctc", "US", overflow - 1) for k in server._BASELINE_RESULT_CACHE)
 
 
 def test_microsim_reuses_the_cached_baseline_across_requests(monkeypatch):

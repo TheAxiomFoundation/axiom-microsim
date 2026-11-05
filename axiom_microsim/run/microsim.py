@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from datetime import date
 from hashlib import sha256
 from pathlib import Path
+from threading import Lock
 from typing import Literal
 
 import numpy as np
@@ -31,6 +32,7 @@ import orjson
 from ruamel.yaml import YAML
 
 from ..data.ecps_loader import EcpsBatch, TaxUnitBatch
+from ..data.population_identity import file_identity, population_identity
 from ..project.co_snap import CoSnapProjection, project as project_co_snap
 from ..project.federal_ctc import FedCtcProjection, project as project_federal_ctc
 from ..project.federal_income_tax import (
@@ -50,35 +52,41 @@ REQUEST_CACHE_MAX_ENTRIES = 8
 
 
 class _BoundedRequestCache:
-    """Tiny LRU keyed by tuple → bytes. Move-to-end on get and put."""
+    """Thread-safe LRU keyed by tuple → bytes. Move-to-end on get and put."""
 
     def __init__(self, max_entries: int = REQUEST_CACHE_MAX_ENTRIES) -> None:
         self._max = max_entries
         self._d: OrderedDict[tuple, bytes] = OrderedDict()
+        self._lock = Lock()
 
     def get(self, key: tuple) -> bytes | None:
-        v = self._d.get(key)
-        if v is not None:
-            self._d.move_to_end(key)
-        return v
+        with self._lock:
+            v = self._d.get(key)
+            if v is not None:
+                self._d.move_to_end(key)
+            return v
 
     def __contains__(self, key: tuple) -> bool:
-        return key in self._d
+        with self._lock:
+            return key in self._d
 
     def __getitem__(self, key: tuple) -> bytes:
-        v = self._d[key]
-        self._d.move_to_end(key)
-        return v
+        with self._lock:
+            v = self._d[key]
+            self._d.move_to_end(key)
+            return v
 
     def __setitem__(self, key: tuple, value: bytes) -> None:
-        if key in self._d:
-            self._d.move_to_end(key)
-        self._d[key] = value
-        while len(self._d) > self._max:
-            self._d.popitem(last=False)
+        with self._lock:
+            if key in self._d:
+                self._d.move_to_end(key)
+            self._d[key] = value
+            while len(self._d) > self._max:
+                self._d.popitem(last=False)
 
     def __len__(self) -> int:
-        return len(self._d)
+        with self._lock:
+            return len(self._d)
 
 
 # --- Locations ---------------------------------------------------------------
@@ -215,7 +223,7 @@ def run_co_snap(
 ) -> MicrosimResult:
     projection = project_co_snap(batch, period_year=period_year)
     artifact_path, scratch = _artifact_for(overrides)
-    cache_key = ("co-snap", batch.state, period_year, outputs)
+    cache_key = ("co-snap", batch.state, period_year, outputs, population_identity())
     try:
         out = _execute_compiled(
             projection,
@@ -254,7 +262,7 @@ def run_federal_ctc(
     """
     projection = project_federal_ctc(batch, period_year=period_year)
     artifact_path, scratch = _ctc_artifact_for(overrides)
-    cache_key = ("federal-ctc", batch.state, period_year, outputs)
+    cache_key = ("federal-ctc", batch.state, period_year, outputs, population_identity())
     try:
         out = _execute_ctc(
             projection,
@@ -771,12 +779,13 @@ def _execute_compiled(
     if cache_key is not None:
         cache_key = (*cache_key, layout.slot_kinds)
         # Plain inputs are shared across reforms. Bridged inputs include a
-        # deduction computed by this artifact, so keep them under its content
-        # hash (reforms use temporary paths; a baseline can be rebuilt in place).
+        # deduction computed by this artifact and engine, so track both
+        # (reforms use temporary paths; a baseline can be rebuilt in place).
         bridge_cache_key = (
             *cache_key,
             "shelter-bridge",
             sha256(artifact_path.read_bytes()).digest(),
+            file_identity(ENGINE_BIN),
         )
         request_bytes = _CO_SNAP_REQUEST_CACHE.get(bridge_cache_key)
         if request_bytes is None:

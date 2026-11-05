@@ -12,13 +12,16 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from hypothesis import HealthCheck, given, settings, strategies as st
 
 from axiom_microsim import server
+from axiom_microsim.data import ecps_loader
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,6 +72,19 @@ def forbid_subprocess(monkeypatch):
     monkeypatch.setattr(server._subprocess, "run", fail)
 
 
+@pytest.fixture
+def forbid_population_loaders(monkeypatch):
+    def fail(state):
+        raise AssertionError("loader reached for a rejected state scope")
+
+    monkeypatch.setattr(server, "load_state", fail)
+    monkeypatch.setattr(server, "load_state_tax_units", fail)
+    # /ecps-stats imports these inside the handler; /microsim uses the
+    # server's module-level aliases above. Guard both call sites.
+    monkeypatch.setattr(ecps_loader, "load_state", fail)
+    monkeypatch.setattr(ecps_loader, "load_state_tax_units", fail)
+
+
 # --- API boundary -----------------------------------------------------------
 
 
@@ -80,31 +96,54 @@ def test_compare_rejects_scope_with_422(scope, pe_python, forbid_subprocess):
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize("program", ["co-snap", "federal-income-tax", "federal-ctc"])
 @pytest.mark.parametrize("scope", REJECTED_SCOPES)
-def test_microsim_rejects_scope_with_422(scope, monkeypatch):
-    def fail(state):
-        raise AssertionError("loader reached for a rejected state scope")
-
-    monkeypatch.setattr(server, "load_state", fail)
-    monkeypatch.setattr(server, "load_state_tax_units", fail)
-
+def test_microsim_rejects_scope_with_422(scope, program, forbid_population_loaders):
     response = TestClient(server.app).post(
-        "/microsim", json={"program": "co-snap", "state": scope, "year": 2026}
+        "/microsim", json={"program": program, "state": scope, "year": 2026}
     )
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize("program", ["co-snap", "federal-income-tax", "federal-ctc"])
 @pytest.mark.parametrize("scope", ["x/../../../tmp/evil", "ZZ", ""])
-def test_ecps_stats_rejects_scope_with_422(scope, monkeypatch):
-    def fail(state):
-        raise AssertionError("loader reached for a rejected state scope")
-
-    monkeypatch.setattr(server, "load_state", fail)
-    monkeypatch.setattr(server, "load_state_tax_units", fail)
-
+def test_ecps_stats_rejects_scope_with_422(scope, program, forbid_population_loaders):
     response = TestClient(server.app).get(
-        "/ecps-stats", params={"program": "co-snap", "state": scope}
+        "/ecps-stats", params={"program": program, "state": scope}
     )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("program", ["co-snap", "federal-income-tax", "federal-ctc"])
+def test_ecps_stats_loader_guards_cover_route_imports(
+    program, forbid_population_loaders, monkeypatch
+):
+    """Bypass request validation to prove the spies catch loading first."""
+
+    def forbid_population_access(*args, **kwargs):
+        raise AssertionError("unguarded loader attempted population access")
+
+    # A missing loader spy must fail this proof without fetching real data.
+    # Its distinct message cannot satisfy the loader-spy assertion below.
+    monkeypatch.setattr(ecps_loader, "_open_population", forbid_population_access)
+    with pytest.raises(AssertionError, match="loader reached for a rejected state scope"):
+        server.ecps_stats(program=program, state="ZZ")
+
+
+@settings(
+    max_examples=50, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
+@given(
+    scope=st.text(max_size=80).filter(
+        lambda scope: scope.strip().upper() not in server.VALID_STATE_SCOPES
+    ),
+    program=st.sampled_from(["co-snap", "federal-income-tax", "federal-ctc"]),
+)
+def test_invalid_scopes_never_reach_population_loaders(scope, program, forbid_population_loaders):
+    client = TestClient(server.app)
+    response = client.post("/microsim", json={"program": program, "state": scope, "year": 2026})
+    assert response.status_code == 422
+    response = client.get("/ecps-stats", params={"program": program, "state": scope})
     assert response.status_code == 422
 
 
@@ -216,13 +255,17 @@ def test_compute_pe_one_rejects_unknown_program(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("scope", ["US", "CO", "DC"])
 def test_compute_pe_one_cache_path_stays_inside_the_cache_dir(scope, monkeypatch, tmp_path):
+    population = tmp_path / "population.h5"
+    population.write_bytes(b"population fixture")
+    monkeypatch.setenv("AXIOM_POPULACE_US_H5", str(population))
+    monkeypatch.setattr("importlib.metadata.version", lambda name: "test-policyengine-us")
     pe = _load_pe_script()
     monkeypatch.setattr(pe, "_CACHE_DIR", tmp_path)
 
     path = pe._cache_path("federal-income-tax", scope, 2026)
 
     assert path.parent == tmp_path
-    assert path.name == f"federal-income-tax-{scope}-2026.pkl"
+    assert re.fullmatch(rf"federal-income-tax-{scope}-2026-[0-9a-f]{{64}}\.pkl", path.name)
 
 
 def test_compute_pe_one_year_cannot_inject_a_path(monkeypatch, tmp_path):

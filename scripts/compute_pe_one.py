@@ -16,6 +16,8 @@ non-zero exit.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import importlib.metadata
 import json
 import os
 import pickle
@@ -97,8 +99,9 @@ def _build_sim(year: int, overrides: list[dict] | None):
     return sim
 
 
-# Baseline runs are deterministic in (program, state, year) against the
-# pinned dataset, so persist the raw arrays across subprocess invocations.
+# Baseline runs are deterministic in (program, state, year) for the same
+# population, installed PolicyEngine version and script. Include those
+# identities in the filename to reuse arrays across subprocess invocations.
 # A reform request then builds only the reform sim — roughly halving it.
 # The cache dir is per-container scratch; the startup prewarm repopulates
 # it after a restart. Reusing identical arrays is loss-free.
@@ -124,7 +127,21 @@ def _cache_path(program: str, state: str, year: int) -> Path:
         )
     if program not in _KNOWN_PROGRAMS:
         raise ValueError(f"unknown program {program!r}")
-    return _CACHE_DIR / f"{program}-{state}-{int(year)}.pkl"
+    year = int(year)
+    if ECPS_PATH.startswith("hf://"):
+        # The default remote population URI includes an immutable revision.
+        population_identity = ECPS_PATH
+    else:
+        population = Path(ECPS_PATH).expanduser().resolve()
+        stat = population.stat()
+        population_identity = (str(population), stat.st_size, stat.st_mtime_ns)
+    identity = {
+        "population": population_identity,
+        "policyengine_us": importlib.metadata.version("policyengine_us"),
+        "script": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+    }
+    digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+    return _CACHE_DIR / f"{program}-{state}-{year}-{digest}.pkl"
 
 
 def _baseline_run_cached(program: str, state: str, year: int) -> dict:

@@ -11,6 +11,8 @@ Two programs supported:
 
 from __future__ import annotations
 
+import importlib.metadata as _metadata
+import importlib.util as _importlib_util
 import json
 import os
 import subprocess as _subprocess
@@ -34,6 +36,8 @@ from .data.ecps_loader import (
     load_state_tax_units,
     sum_person_to_tax_unit,
 )
+from .data.population_identity import file_identity, population_identity
+from .run import microsim as _runtime
 from .run.microsim import (
     ParameterOverride,
     run_co_snap,
@@ -348,16 +352,39 @@ def _lru_put(cache: OrderedDict, key, value) -> None:
 
 # PE output is deterministic in (program, state, year, overrides), so
 # identical requests can reuse the last result instead of paying the
-# multi-minute recompute. Keyed on the exact request; no accuracy impact.
+# multi-minute recompute. PE code and population data are assumed fixed
+# for this process lifetime; changing either requires restarting the process.
 # Single-flight: concurrent identical requests wait on the first compute
 # (matters during startup prewarm) instead of stacking PE subprocesses.
 _COMPARE_CACHE: OrderedDict[str, CompareResponse] = OrderedDict()
 _COMPARE_CACHE_LOCK = _threading.Lock()
-_COMPARE_INFLIGHT: dict[str, _threading.Event] = {}
+
+
+# Each waiter retains its flight even after the slot is removed. Failures
+# belong only to that flight and never enter the persistent result cache.
+class _CompareFlight:
+    def __init__(self) -> None:
+        self.event = _threading.Event()
+        self.result: CompareResponse | None = None
+        self.failure: tuple[int, object] | None = None
+
+
+_COMPARE_INFLIGHT: dict[str, _CompareFlight] = {}
+_COMPARE_WAITER_TIMEOUT_SECONDS = 780
+
+
+def _compare_timeout_detail(seconds: float) -> str:
+    return (
+        f"PE compute exceeded {seconds:.0f}s. Baseline results are "
+        f"precomputed at startup; reform comparisons may take several "
+        f"minutes on a cold container — retry shortly."
+    )
 
 
 @app.post("/compare", response_model=CompareResponse)
 def compare(req: CompareRequest) -> CompareResponse:
+    started = _time.monotonic()
+    deadline = started + _COMPARE_WAITER_TIMEOUT_SECONDS
     t0 = _time.time()
     cache_key = json.dumps(
         {
@@ -368,28 +395,43 @@ def compare(req: CompareRequest) -> CompareResponse:
         },
         sort_keys=True,
     )
-    while True:
-        with _COMPARE_CACHE_LOCK:
-            cached = _lru_get(_COMPARE_CACHE, cache_key)
-            if cached is not None:
-                # `elapsed_seconds` is what THIS caller waited, not what the
-                # original compute cost. The UI prints it as "PE took N s";
-                # replaying the cold number would misreport a cache hit (and
-                # a single-flight waiter's real wait) as a fresh PE run.
-                return cached.model_copy(update={"elapsed_seconds": _time.time() - t0})
-            event = _COMPARE_INFLIGHT.get(cache_key)
-            if event is None:
-                _COMPARE_INFLIGHT[cache_key] = _threading.Event()
-                break
-        event.wait(timeout=600)
+    with _COMPARE_CACHE_LOCK:
+        cached = _lru_get(_COMPARE_CACHE, cache_key)
+        if cached is not None:
+            # Elapsed time belongs to this request, including on a cache hit.
+            return cached.model_copy(update={"elapsed_seconds": _time.time() - t0})
+        flight = _COMPARE_INFLIGHT.get(cache_key)
+        leader = flight is None
+        if leader:
+            flight = _CompareFlight()
+            _COMPARE_INFLIGHT[cache_key] = flight
+
+    if not leader:
+        remaining = deadline - _time.monotonic()
+        if (
+            remaining <= 0
+            or not flight.event.wait(timeout=remaining)
+            or _time.monotonic() >= deadline
+        ):
+            raise HTTPException(504, _compare_timeout_detail(_COMPARE_WAITER_TIMEOUT_SECONDS))
+        if flight.failure is not None:
+            status, detail = flight.failure
+            raise HTTPException(status, detail)
+        return flight.result.model_copy(update={"elapsed_seconds": _time.time() - t0})
+
     try:
-        response = _compare_uncached(req, cache_key)
+        flight.result = _compare_uncached(req, cache_key)
+        return flight.result
+    except HTTPException as exc:
+        flight.failure = (exc.status_code, exc.detail)
+        raise
+    except Exception as exc:
+        flight.failure = (500, str(exc))
+        raise HTTPException(500, str(exc)) from exc
     finally:
         with _COMPARE_CACHE_LOCK:
-            event = _COMPARE_INFLIGHT.pop(cache_key, None)
-        if event is not None:
-            event.set()
-    return response
+            _COMPARE_INFLIGHT.pop(cache_key, None)
+            flight.event.set()
 
 
 def _run_pe_subprocess(req: CompareRequest, overrides_json: str) -> _subprocess.CompletedProcess:
@@ -428,9 +470,7 @@ def _compare_uncached(req: CompareRequest, cache_key: str) -> CompareResponse:
     except _subprocess.TimeoutExpired as exc:
         raise HTTPException(
             504,
-            f"PE compute exceeded {exc.timeout:.0f}s. Baseline results are "
-            f"precomputed at startup; reform comparisons may take several "
-            f"minutes on a cold container — retry shortly.",
+            _compare_timeout_detail(exc.timeout),
         ) from exc
     elapsed = _time.time() - t0
     if proc.returncode != 0:
@@ -462,20 +502,76 @@ def _compare_uncached(req: CompareRequest, cache_key: str) -> CompareResponse:
     return response
 
 
-# Baseline engine runs are deterministic in (program, state, year) but were
-# recomputed inside every reform request — roughly half the reform latency.
-# Results are treated as read-only by the handlers, so reuse is loss-free.
+# Baselines also depend on the population, engine and the artifact/rules
+# actually executed. Results are read-only in the handlers and bounded as above.
 _BASELINE_RESULT_CACHE: OrderedDict[tuple, object] = OrderedDict()
 _BASELINE_RESULT_LOCK = _threading.Lock()
 
 
+def _tree_identity(root: _Path, suffixes: set[str]) -> tuple:
+    return (
+        file_identity(root),
+        tuple(file_identity(p) for p in sorted(root.rglob("*")) if p.suffix in suffixes),
+    )
+
+
+def _dense_engine_identity() -> tuple:
+    try:
+        version = _metadata.version("axiom-rules-engine")
+    except _metadata.PackageNotFoundError:
+        version = None
+    spec = _importlib_util.find_spec("axiom_rules_engine")
+    package = (
+        _tree_identity(_Path(spec.origin).parent, {".py", ".so", ".pyd", ".dylib"})
+        if spec is not None and spec.origin is not None
+        else None
+    )
+    native_spec = _importlib_util.find_spec("axiom_rules_engine_dense")
+    native = None
+    if native_spec is not None and native_spec.origin is not None:
+        native_path = _Path(native_spec.origin)
+        native = (
+            _tree_identity(native_path.parent, {".py", ".so", ".pyd", ".dylib"})
+            if native_spec.submodule_search_locations is not None
+            else file_identity(native_path)
+        )
+    return (version, package, native)
+
+
+def _baseline_inputs(program: str) -> tuple:
+    if program == "federal-income-tax":
+        # The dense path reads YAML, including imports, rather than its JSON
+        # artifact. Noncanonical checkouts run from a persistent staged copy.
+        root = _runtime.RULES_US_DIR
+        scratch = _runtime._BASELINE_RULES_SCRATCH
+        if (
+            not any(p.startswith("rulespec-") for p in root.resolve().parts)
+            and scratch is not None
+            and scratch.exists()
+        ):
+            root = scratch / "rulespec-us"
+        program_input = _tree_identity(root, {".yaml", ".yml"})
+        engine = _dense_engine_identity()
+    else:
+        artifact = (
+            _runtime.CO_SNAP_BASELINE_ARTIFACT
+            if program == "co-snap"
+            else _runtime.ARTIFACTS_DIR / "federal-ctc.compiled.json"
+        )
+        program_input = file_identity(artifact)
+        engine = file_identity(_runtime.ENGINE_BIN)
+    return (program_input, population_identity(), engine)
+
+
 def _cached_baseline(program: str, state: str, year: int, compute):
-    key = (program, state, year)
+    key = (program, state, year, _baseline_inputs(program))
     with _BASELINE_RESULT_LOCK:
         hit = _lru_get(_BASELINE_RESULT_CACHE, key)
     if hit is not None:
         return hit
     result = compute()
+    # A first run may create the compiled artifact or stage the dense rules.
+    key = (program, state, year, _baseline_inputs(program))
     with _BASELINE_RESULT_LOCK:
         _lru_put(_BASELINE_RESULT_CACHE, key, result)
     return result

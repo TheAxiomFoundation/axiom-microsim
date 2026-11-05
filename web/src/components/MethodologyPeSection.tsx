@@ -75,10 +75,10 @@ export function MethodologyPeSection() {
         <code className="font-mono text-[0.85em] text-accent">
           policyengine_us.Microsimulation
         </code>
-        . Each distinct program-and-reform combination is computed once
-        server-side and cached; default baselines are precomputed at
-        startup, so those land instantly. The first run of a new reform
-        recomputes PE from scratch and can take several minutes.
+        . The server caches recent results and computes the default
+        baselines when a container starts. When the cache doesn't hold a
+        result, the server recomputes PE from scratch, which can take
+        several minutes.
       </p>
       {SCOPES.map((s) => (
         <PeRow key={s.id} scope={s} />

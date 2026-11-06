@@ -5,14 +5,15 @@ Uses the binary and checkouts the app itself reads: ``$AXIOM_RULES_ENGINE_BINARY
 when they are absent, as in CI. Set them to a candidate engine and rulespec-us
 before a pin move: each program's baseline and a reform must compile, and the
 artifact must name every output id the runner requests, including Colorado's
-shelter deduction when a CO SNAP artifact names the federal shelter input the
-runner bridges it into. Production runs §1(j)
+shelter deduction when a CO SNAP artifact reads the federal shelter deduction as
+an input: the runner fills that input from Colorado's output. Production runs §1(j)
 through the dense binding instead, so that test also needs the binding's
 native extension (axiom-rules-engine ``python-ext``), which CI doesn't build.
 """
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -78,6 +79,27 @@ def _scratch_artifacts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+# The input whose "missing input" error sends `_execute_compiled` to the shelter bridge.
+SHELTER_INPUT = "snap_excess_shelter_deduction"
+
+
+def _reads_input(node: object, name: str) -> bool:
+    """Whether a compiled program reads ``name`` as a plain input.
+
+    The engine reports an input missing only from an ``input`` reference
+    (axiom-rules-engine ``src/spec.rs``: ``ScalarExprSpec::Input`` and
+    ``RelatedValueRefSpec::Input``). An ``input_or_else`` reference falls back to
+    its default, and a ``derived`` reference reads a value the program computes.
+    """
+    if isinstance(node, dict):
+        if node.get("kind") == "input" and node.get("name") == name:
+            return True
+        return any(_reads_input(value, name) for value in node.values())
+    if isinstance(node, list):
+        return any(_reads_input(value, name) for value in node)
+    return False
+
+
 @pytest.mark.parametrize("reform", [False, True], ids=["baseline", "reform"])
 @pytest.mark.parametrize("program", sorted(PROGRAMS))
 def test_program_compiles_with_the_ids_the_runner_requests(program: str, reform: bool) -> None:
@@ -101,9 +123,10 @@ def test_program_compiles_with_the_ids_the_runner_requests(program: str, reform:
             artifact.unlink(missing_ok=True)
 
     requested = list(output_ids)
-    if program == "co-snap" and b"snap_excess_shelter_deduction" in data:
-        # When the engine reports this federal SNAP input missing, the runner
+    if program == "co-snap" and _reads_input(json.loads(data)["program"], SHELTER_INPUT):
+        # The engine reports this federal SNAP input missing, so the runner
         # asks the same artifact for Colorado's shelter deduction to fill it.
+        # A tree whose Colorado composition derives the deduction never asks.
         requested.append(M.CO_SNAP_EXCESS_SHELTER_OUTPUT)
     missing = [i for i in requested if f'"{i}"'.encode() not in data]
     assert not missing, f"{program} artifact names none of {missing}"

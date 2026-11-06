@@ -135,11 +135,26 @@ flat-era `repo` and `file_relative`; in the monorepo, `rules-us` resolves under
 
 **Why.** Engines come in three kinds (issue #25). f2412104, the SHA
 `modal_app.py` pins, takes no root and reads only the flat layout. The v0.1.1
-and v0.1.2 releases take no root and read both. 0.1.0 and the 0.2.x engines
+and v0.1.2 releases take no root and read both. v0.1.0 and the 0.2.x engines
 require the root and read only the monorepo. So neither `--version` nor the
 version number tells them apart. Probing the flag keeps
 production's command unchanged, and reading the layout from the tree lets a
 pin move need no code switch.
+
+The engine's source at each ref shows these contracts. `src/main.rs` lacks
+`--rulespec-root` at f2412104, v0.1.1 and v0.1.2, and requires it at v0.1.0
+and v0.2.0 through v0.2.2. `src/rulespec.rs` at f2412104 reads module paths
+from the repository root; at v0.1.1 and v0.1.2 it also reads them below a
+jurisdiction directory. `src/source.rs` at v0.1.0 and the 0.2.x tags loads
+modules only from explicit country monorepos.
+
+**Validation scope.** `tests/test_rules_layout.py` runs the builders against
+fakes of those three contracts, not against the engines.
+`tests/test_engine_compile.py` runs them against a real binary and rules
+checkout when `AXIOM_RULES_ENGINE_BINARY` and `AXIOM_RULES_US_DIR` (and, for
+flat rules, `AXIOM_RULES_US_CO_DIR`) name them; its dense case also needs the
+native binding. Run both against the candidate before moving a pin, since a
+skip for a missing checkout or binding says nothing about compatibility.
 
 **How to apply.** A new compile site stages a tree, reads it with
 `_scratch_tree` (or `_baseline_rules_tree`), and calls

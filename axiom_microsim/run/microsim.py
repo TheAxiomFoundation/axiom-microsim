@@ -541,11 +541,12 @@ def _stage_jurisdiction_trees(*, include_co: bool) -> Path:
                 f"at {RULES_US_DIR}"
             )
     scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-rules-"))
-    for repo in repos:
-        directory = JURISDICTION_DIRS[repo]
-        shutil.copytree(
-            RULES_US_DIR / directory, scratch / "rulespec-us" / directory, symlinks=False
-        )
+    with _cleaned_up_on_failure(scratch):
+        for repo in repos:
+            directory = JURISDICTION_DIRS[repo]
+            shutil.copytree(
+                RULES_US_DIR / directory, scratch / "rulespec-us" / directory, symlinks=False
+            )
     return scratch
 
 
@@ -590,7 +591,7 @@ def _compile_program(program_yaml: Path, output_json: Path, tree: _RulesTree) ->
 
 @contextlib.contextmanager
 def _cleaned_up_on_failure(scratch: Path) -> Iterator[None]:
-    """Remove a reform's scratch tree if patching or compiling it fails.
+    """Remove a scratch tree if staging, patching or compiling it fails.
 
     The builder raises before it can hand the tree to its caller to remove, and
     a monorepo stage is tens of megabytes.
@@ -627,9 +628,10 @@ def _staged_rules_trees(*, include_co: bool = False) -> Path:
     if include_co and not RULES_US_CO_DIR.exists():
         raise FileNotFoundError(f"rules-us-co missing at {RULES_US_CO_DIR}")
     scratch = Path(tempfile.mkdtemp(prefix="axiom-microsim-rules-"))
-    shutil.copytree(RULES_US_DIR, scratch / "rulespec-us", symlinks=False)
-    if include_co:
-        shutil.copytree(RULES_US_CO_DIR, scratch / "rulespec-us-co", symlinks=False)
+    with _cleaned_up_on_failure(scratch):
+        shutil.copytree(RULES_US_DIR, scratch / "rulespec-us", symlinks=False)
+        if include_co:
+            shutil.copytree(RULES_US_CO_DIR, scratch / "rulespec-us-co", symlinks=False)
     return scratch
 
 

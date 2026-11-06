@@ -4,19 +4,21 @@ rulespec-us has a flat layout (``rulespec-us/statutes/...`` beside a separate
 ``rulespec-us-co`` checkout) and a monorepo layout (``rulespec-us/us/...``,
 ``rulespec-us/us-co/...``). Three engine generations read them:
 
-* ``rooted``, like axiom-rules-engine 753ce7d and 89571cc (0.2.2): ``compile
-  --help`` exits 0 and names ``--rulespec-root``; ``compile`` requires an
-  absolute root named ``rulespec-<country>`` and refuses a root whose top level
-  holds ``policies/``, ``regulations/`` or ``statutes/``.
+* ``rooted``, like axiom-rules-engine 89571cc (0.2.2): ``compile --help`` exits
+  0 and names ``--rulespec-root``; ``compile`` requires an absolute root named
+  ``rulespec-<country>`` and refuses a root whose top level holds
+  ``policies/``, ``regulations/`` or ``statutes/``.
 * ``release``, like 98af0dc (0.1.2): rejects ``--help`` and ``--rulespec-root``
   as unknown compile arguments, and names modules correctly from either layout.
 * ``legacy``, like f2412104, the SHA modal_app.py pins: rejects them the same
   way, and names a monorepo module after its jurisdiction directory too
   (``us:us/statutes/26/24/h``).
 
-Those behaviours were observed by running each binary. The fakes below
-reproduce only them, so these tests need no engine; ``test_engine_compile.py``
-drives the same builders against a real binary when one is configured.
+The engine's source at each of those commits shows that behaviour
+(``src/main.rs`` for the arguments, ``src/rulespec.rs`` for the root and module
+names). The fakes below reproduce only it, so these tests need no engine and
+don't check any release itself; ``test_engine_compile.py`` drives the same
+builders against a real binary when one is configured.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+import tempfile
 import types
 from pathlib import Path
 
@@ -455,6 +458,59 @@ FAILED_REFORMS = [
 ]
 
 
+@pytest.mark.parametrize("builder", [*sorted(BUILDERS), "income-tax-dense"])
+def test_copy_failure_in_a_reform_leaves_no_stage(rig: Rig, builder: str) -> None:
+    root = rig.monorepo()
+    (root / "us" / "broken.yaml").symlink_to(root / "missing.yaml")
+    if builder == "income-tax-dense":
+        build, override = M._patched_program_for_fed_income_tax, BRACKETS_OVERRIDE
+    else:
+        build, _, _, override = BUILDERS[builder]
+
+    for _ in range(2):
+        with pytest.raises(shutil.Error, match="broken.yaml"):
+            build([override])
+
+    assert not list((rig.tmp / "scratch").iterdir())
+    assert not M.ARTIFACTS_DIR.exists()
+
+
+@settings(
+    max_examples=24,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@example(layout="jurisdiction", include_co=True, fail_co=True, requests=2)
+@given(
+    layout=st.sampled_from(["flat", "jurisdiction"]),
+    include_co=st.booleans(),
+    fail_co=st.booleans(),
+    requests=st.integers(min_value=1, max_value=3),
+)
+def test_copy_failure_never_accumulates_stages(
+    tmp_path: Path, layout: str, include_co: bool, fail_co: bool, requests: int
+) -> None:
+    """A stage belongs to its caller only after every requested copy succeeds."""
+    with (
+        tempfile.TemporaryDirectory(dir=tmp_path) as directory,
+        pytest.MonkeyPatch.context() as patcher,
+    ):
+        rig = Rig(Path(directory), patcher)
+        if layout == "flat":
+            us, co = rig.flat_rules()
+        else:
+            root = rig.monorepo()
+            us, co = root / "us", root / "us-co"
+        failed_root = co if include_co and fail_co else us
+        (failed_root / "broken.yaml").symlink_to(rig.tmp / "missing.yaml")
+
+        for _ in range(requests):
+            with pytest.raises(shutil.Error, match="broken.yaml"):
+                M._staged_rules_trees(include_co=include_co)
+            assert not list((rig.tmp / "scratch").iterdir())
+        assert not M.ARTIFACTS_DIR.exists()
+
+
 @pytest.mark.parametrize("layout", ["flat", "jurisdiction"])
 @pytest.mark.parametrize(("builder", "failure"), FAILED_REFORMS)
 def test_a_failed_reform_leaves_no_stage_or_artifact(
@@ -641,7 +697,11 @@ def staged_monorepo(tmp_path_factory: pytest.TempPathFactory) -> M._RulesTree:
     return M._scratch_tree(scratch)
 
 
-@settings(max_examples=300, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(
+    max_examples=300,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 @example(repo="rules-us", file_relative="link/statutes/x.yaml")
 @example(repo="rules-us", file_relative="/etc/passwd")
 @example(repo="rules-us-co", file_relative="../us/statutes/26/24/h.yaml")

@@ -497,9 +497,9 @@ def _engine_takes_rulespec_root() -> bool:
     """Whether ``ENGINE_BIN``'s ``compile`` takes ``--rulespec-root``.
 
     Probed once per binary build: engines that take it print a usage naming it
-    and exit 0, and older ones reject ``--help`` as an unknown argument. An
-    answer that names no ``--rulespec-root`` reads as "older"; if that is wrong,
-    the engine's own compile error says a root is missing.
+    and exit 0, and the rootless engines reject ``--help`` as an unknown
+    argument. An answer that names no ``--rulespec-root`` reads as rootless; if
+    that is wrong, the engine's own compile error says a root is missing.
     """
     stat = ENGINE_BIN.stat()
     return _probe_rulespec_root_flag(str(ENGINE_BIN), stat.st_mtime_ns, stat.st_size)

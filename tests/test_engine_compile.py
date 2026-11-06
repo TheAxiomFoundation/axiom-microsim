@@ -4,7 +4,9 @@ Uses the binary and checkouts the app itself reads: ``$AXIOM_RULES_ENGINE_BINARY
 ``$AXIOM_RULES_US_DIR`` and, for a flat tree, ``$AXIOM_RULES_US_CO_DIR``. Self-skips
 when they are absent, as in CI. Set them to a candidate engine and rulespec-us
 before a pin move: each program's baseline and a reform must compile, and the
-artifact must name every output id the runner requests. Production runs §1(j)
+artifact must name every output id the runner requests, including Colorado's
+shelter deduction when a CO SNAP artifact names the federal shelter input the
+runner bridges it into. Production runs §1(j)
 through the dense binding instead, so that test also needs the binding's
 native extension (axiom-rules-engine ``python-ext``), which CI doesn't build.
 """
@@ -80,6 +82,15 @@ def _scratch_artifacts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize("program", sorted(PROGRAMS))
 def test_program_compiles_with_the_ids_the_runner_requests(program: str, reform: bool) -> None:
     build, output_ids, override = PROGRAMS[program]
+    if (
+        program == "co-snap"
+        and M._rules_layout(M.RULES_US_DIR) == "flat"
+        and not M.RULES_US_CO_DIR.exists()
+    ):
+        pytest.skip(
+            f"flat rules need a rules-us-co checkout for CO SNAP ({M.RULES_US_CO_DIR}); "
+            "set AXIOM_RULES_US_CO_DIR"
+        )
 
     artifact, scratch = build([override] if reform else None)
     try:
@@ -89,7 +100,12 @@ def test_program_compiles_with_the_ids_the_runner_requests(program: str, reform:
             shutil.rmtree(scratch, ignore_errors=True)
             artifact.unlink(missing_ok=True)
 
-    missing = [i for i in output_ids if f'"{i}"'.encode() not in data]
+    requested = list(output_ids)
+    if program == "co-snap" and b"snap_excess_shelter_deduction" in data:
+        # When the engine reports this federal SNAP input missing, the runner
+        # asks the same artifact for Colorado's shelter deduction to fill it.
+        requested.append(M.CO_SNAP_EXCESS_SHELTER_OUTPUT)
+    missing = [i for i in requested if f'"{i}"'.encode() not in data]
     assert not missing, f"{program} artifact names none of {missing}"
 
 

@@ -2,10 +2,11 @@
 
 A warm container bills every hour whether or not anyone calls it. With
 ``min_containers=1`` this app cost about $1.68/day at Modal's default CPU, and
-about $10.8/day once the function reserved 8 cores, while serving a handful of
-demo sessions a month (Modal workspace billing, May-Sep 2026). This test reads
-``modal_app.py`` as source, so it runs without Modal installed, and fails if the
-``web`` endpoint pins a warm container again.
+about $10.8/day once the function reserved 8 cores (Modal workspace billing,
+May-Sep 2026). After it scaled to zero, billing showed container time on only
+9 of the next 68 days. This test reads ``modal_app.py`` as source, so it runs
+without Modal installed, and fails if the ``web`` decorator pins a warm
+container again. It does not see runtime ``update_autoscaler`` calls.
 """
 
 from __future__ import annotations

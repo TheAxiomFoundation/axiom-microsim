@@ -182,9 +182,13 @@ image = (
     volumes={POPULACE_MOUNT: POPULACE_VOLUME},
     timeout=600,
     memory=8192,
-    # PE microsim warmup is heavy; keep one container hot to avoid
-    # paying the cold start on every reform run.
-    min_containers=1,
+    # Scale to zero when idle. min_containers=1 billed this container around
+    # the clock with almost no traffic: about $1.68/day at the default CPU and
+    # about $10.8/day once cpu=8 was added (Modal billing, May-Sep 2026). A
+    # container stays up 15 minutes after the last request, so a demo session
+    # pays one cold start, not one per click.
+    min_containers=0,
+    scaledown_window=900,
 )
 @modal.asgi_app()
 def web():
